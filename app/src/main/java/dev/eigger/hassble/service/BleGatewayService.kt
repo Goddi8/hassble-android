@@ -87,6 +87,7 @@ class BleGatewayService : Service() {
     private val vehiclePresenceMonitor by lazy { VehiclePresenceMonitor(applicationContext) }
     @Volatile private var vehicleLastSeenMs: Long = 0L
     @Volatile private var activeVehicleId: String? = null
+    @Volatile private var activeVehicleState: String = "Kein Fahrzeug erkannt"
     private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var configJob: Job? = null
@@ -657,6 +658,17 @@ class BleGatewayService : Service() {
                     val graceMs = vehicleConfig.disconnectDelaySeconds.coerceAtLeast(0) * 1000L
                     val vehicleStillPresent = vehicleLastSeenMs != 0L && tickMs - vehicleLastSeenMs < graceMs
                     val selectedVehicleId = if (vehicleConfig.enabled && vehicleStillPresent) activeVehicleId else null
+                    val activeVehicleName = when {
+                        !vehicleConfig.enabled -> "Fahrzeugerkennung deaktiviert"
+                        selectedVehicleId == null -> "Kein Fahrzeug erkannt"
+                        selectedVehicleId == VehiclePresenceMonitor.LEGACY_VEHICLE_ID -> "Fahrzeug erkannt"
+                        else -> vehicleConfig.vehicles.firstOrNull { it.id == selectedVehicleId }?.name ?: selectedVehicleId
+                    }
+                    if (activeVehicleState != activeVehicleName) {
+                        activeVehicleState = activeVehicleName
+                        ws?.takeIf { it.connectionState.value == ConnectionState.Connected }
+                            ?.sendStates(listOf(gatewayId() + "_active_vehicle" to activeVehicleName))
+                    }
                     val obdBlockedIds = when {
                         !vehicleConfig.enabled -> emptySet()
                         vehicleConfig.vehicles.isNotEmpty() -> config.devices
@@ -717,6 +729,11 @@ class BleGatewayService : Service() {
             name = "Service Status", device = phoneDevice,
             deviceClass = "running", entityCategory = "diagnostic",
         ))
+        client.declareEntity(EntityMsg(
+            id = 0, uniqueId = "${gatewayId()}_active_vehicle", platform = "sensor",
+            name = "Aktives Fahrzeug", device = phoneDevice,
+            icon = "mdi:car-electric", entityCategory = "diagnostic",
+        ))
     }
 
     private fun publishGatewayStates(client: HaWsClient?) {
@@ -725,6 +742,7 @@ class BleGatewayService : Service() {
         c.sendStates(listOf(
             "${gatewayId()}_connection" to "on",
             "${gatewayId()}_service_status" to "on",
+            "${gatewayId()}_active_vehicle" to activeVehicleState,
         ))
     }
 
