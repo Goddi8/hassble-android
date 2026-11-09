@@ -100,6 +100,7 @@ class BleRuntime(
     private var lastBoundDevices: Map<String, String> = emptyMap()
     private var lastScanMode: BleScanModeOption? = null
     private var lastAutoConnectDisabledIds: Set<String> = emptySet()
+    private var lastVehicleBlockedIds: Set<String> = emptySet()
     private var lastUnfilteredScan: Boolean? = null
 
     private val devices = java.util.concurrent.ConcurrentHashMap<String, DeviceConfig>()
@@ -238,12 +239,14 @@ class BleRuntime(
         autoConnectDisabledIds: Set<String> = emptySet(),
         unfilteredScan: Boolean = false,
         advCounters: Map<String, Int> = emptyMap(),
+        vehicleBlockedIds: Set<String> = emptySet(),
     ) {
         val oldConfig = this.lastConfig
         val oldEnabled = this.lastEnabled
         val oldBoundDevices = this.lastBoundDevices
         val oldScanMode = this.lastScanMode
         val oldAutoConnectDisabledIds = this.lastAutoConnectDisabledIds
+        val oldVehicleBlockedIds = this.lastVehicleBlockedIds
         val oldUnfilteredScan = this.lastUnfilteredScan
 
         val oldIssues = validationIssues
@@ -268,6 +271,7 @@ class BleRuntime(
             this.lastBoundDevices = boundDevices
             this.lastScanMode = scanMode
             this.lastAutoConnectDisabledIds = autoConnectDisabledIds
+            this.lastVehicleBlockedIds = vehicleBlockedIds
             this.lastUnfilteredScan = unfilteredScan
             this.lastWaitMacs = ConnectionWaitMacs.of(config, boundDevices, autoConnectDisabledIds)
 
@@ -323,6 +327,7 @@ class BleRuntime(
             val configChanged = oldD != d
             val boundMacChanged = boundDevices[deviceId] != oldBoundDevices[deviceId]
             val autoConnectChanged = (deviceId in autoConnectDisabledIds) != (deviceId in oldAutoConnectDisabledIds)
+            val vehicleBlockChanged = (deviceId in vehicleBlockedIds) != (deviceId in oldVehicleBlockedIds)
 
             // Check if active sensors key set for this device changed
             val newEnabledKeys = enabledKeys.filter { it.startsWith("$deviceId/") }.toSet()
@@ -332,13 +337,14 @@ class BleRuntime(
             // 다른 기기가 추가돼 이 기기의 키가 새로 충돌(예: 연결 스위치 uniqueId)하면 이미 등록된 filters/controls를 걷어 내야 한다.
             val errorsChanged = ConfigValidator.errorKeys(validationIssues, deviceId) != ConfigValidator.errorKeys(oldIssues, deviceId)
 
-            val needsRestart = isNewDevice || configChanged || boundMacChanged || autoConnectChanged || sensorsChanged || errorsChanged
+            val needsRestart = isNewDevice || configChanged || boundMacChanged || autoConnectChanged || vehicleBlockChanged || sensorsChanged || errorsChanged
 
             if (needsRestart) {
                 // async HA cleanup이 진행 중인 device는 그 완료를 기다리지 않고 skip
                 // (이전 async 블록이 구 config로 startDevice를 호출하는 것을 방지)
                 if (deviceId in pendingHaCleanupIds) continue
                 stopDevice(deviceId)
+                if (deviceId in vehicleBlockedIds) continue
                 val needsHaCleanup = configChanged && oldD != null &&
                         ConfigValidator.hasSensorStructureChange(oldD, d)
                 if (needsHaCleanup) {
@@ -371,6 +377,7 @@ class BleRuntime(
         this.lastBoundDevices = boundDevices
         this.lastScanMode = scanMode
         this.lastAutoConnectDisabledIds = autoConnectDisabledIds
+        this.lastVehicleBlockedIds = vehicleBlockedIds
         this.lastUnfilteredScan = unfilteredScan
     }
 
@@ -1146,6 +1153,7 @@ class BleRuntime(
         lastBoundDevices = emptyMap()
         lastScanMode = null
         lastAutoConnectDisabledIds = emptySet()
+        lastVehicleBlockedIds = emptySet()
         lastUnfilteredScan = null
     }
 

@@ -62,6 +62,7 @@ private data class SettingsSnapshot(
     val enabledSensors: Set<String>,
     val scanMode: dev.eigger.hassble.config.BleScanModeOption,
     val autoConnectDisabled: Set<String>,
+    val vehicleBlockedIds: Set<String>,
     val unfilteredScan: Boolean,
     val advCounters: Map<String, Int> = emptyMap(),
 )
@@ -693,7 +694,8 @@ class BleGatewayService : Service() {
                         boundMap = boundMap.entries.associate { it.key.toString() to it.value.toString() },
                         enabledSensors = effectiveEnabled,
                         scanMode = scanMode,
-                        autoConnectDisabled = autoConnectDisabled.filterIsInstance<String>().toSet() + obdBlockedIds,
+                        autoConnectDisabled = autoConnectDisabled.filterIsInstance<String>().toSet(),
+                        vehicleBlockedIds = obdBlockedIds,
                         unfilteredScan = unfilteredScan,
                         advCounters = advCounters.entries.associate { it.key.toString() to ((it.value as? Number)?.toInt() ?: 0) },
                     )
@@ -706,6 +708,7 @@ class BleGatewayService : Service() {
                         snapshot.autoConnectDisabled,
                         snapshot.unfilteredScan,
                         snapshot.advCounters,
+                        snapshot.vehicleBlockedIds,
                     )
                 } }
             }
