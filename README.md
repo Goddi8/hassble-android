@@ -43,57 +43,88 @@ It **does not use MQTT**, relying solely on the existing Home Assistant URL + ac
 
 3. **GATT notify + Bi-directional Control** — Receives data from push-based BLE devices and allows bi-directional control from Home Assistant to BLE devices via switch/number controls.
 
-### Multi-vehicle OBD profiles
+### Configuration model: `config.yaml` and `templates.yaml`
 
-HassBle can manage multiple vehicle profiles in one configuration. Each vehicle has its own identity, and each OBD device is assigned to a vehicle using \`vehicle_id\`. This allows the app to select the matching OBD profile based on the connected vehicle instead of connecting to every configured adapter.
+HassBle separates **vehicle identification** from **device and sensor definitions**. The two files have different jobs:
 
-The vehicle Bluetooth address belongs to the car's infotainment / hands-free or audio connection. It is **not** the Bluetooth address of the OBD adapter.
+| File | Role | Refreshed by |
+|------|------|-------------|
+| `config.yaml` | Active base configuration: global publish defaults and vehicle-presence profiles. It may also contain direct device definitions. | Loading or refreshing the Git configuration in the Sensors tab. |
+| `templates.yaml` | Catalog of reusable device profiles. A template contains the device definition, such as BLE source, OBD adapter settings, initialization commands, PIDs, formulas, and sensor metadata. | **Refresh** inside the template picker. |
 
-Example:
+**A template is not active just because it exists in Git.** In the Sensors tab, choose **Import template** to add it as a local draft device. Enable the sensors you want to publish. Imported drafts are stored locally and combined with the base configuration at runtime. Use **Export YAML** to back up or maintain local drafts in Git.
 
-\`\`\`yaml
+#### `config.yaml`: which vehicle is present?
+
+For multi-vehicle OBD, `vehicle_presence.vehicles` lists the cars HassBle can identify. Each entry needs a stable `id`, a display `name`, and the Bluetooth address of the car's infotainment / hands-free or audio system.
+
+```yaml
+version: 1
+defaults:
+  publish:
+    on_change_only: true
+    min_interval: 2s
+
 vehicle_presence:
   enabled: true
-  disconnect_delay_seconds: 30
+  disconnect_delay_seconds: 15
   vehicles:
     - id: vw_id7
-      name: "VW ID.7"
+      name: "VW ID.7 Pro"
       bluetooth_mac: "AA:BB:CC:DD:EE:01"
     - id: fiat_500e
       name: "Fiat 500e"
       bluetooth_mac: "AA:BB:CC:DD:EE:02"
+```
 
-devices:
-  - id: vw_id7_obd
-    name: "VW ID.7 OBD"
-    source: obd
-    vehicle_id: vw_id7
-    obd:
-      mac: "11:22:33:44:55:66" # OBD adapter address, not the car address
-    sensors:
-      # Vehicle-specific PIDs and formulas
-      - key: hv_soc
-        mode: "22"
-        pid: "028C"
-        formula: "b/2.5"
-        unit: "%"
-        update_interval: 10s
+The car's Bluetooth address is **not** the OBD adapter's address. The optional `wifi_ssid` can be used as an additional/fallback vehicle-presence identifier where supported.
 
-  - id: fiat_500e_obd
-    name: "Fiat 500e OBD"
-    source: obd
-    vehicle_id: fiat_500e
-    obd:
-      mac: "22:33:44:55:66:77"
-    sensors:
-      # Add the Fiat-specific PIDs and formulas here
-\`\`\`
+#### `templates.yaml`: what should HassBle read from the vehicle?
 
-Add one entry under \`vehicle_presence.vehicles\` for each car and assign its OBD device to the corresponding \`vehicle_id\`. Each OBD profile can have its own adapter settings, initialization commands, PIDs, and formulas. The optional \`wifi_ssid\` field can be used as a fallback where supported by the vehicle-presence configuration.
+Each OBD template defines one vehicle-specific OBD device and its sensors. Its `device.vehicle_id` must exactly match one of the IDs in `config.yaml`.
 
-The configured \`disconnect_delay_seconds\` controls the vehicle-presence disconnect delay used for OBD profile selection. The separate automatic gateway stop delay described below is currently 15 seconds.
+```yaml
+templates:
+  - id: vw_id7_template
+    name: "VW ID.7 Pro"
+    device:
+      id: vw_id7_pro_meb
+      name: "VW ID.7 Pro – HV battery"
+      source: obd
+      vehicle_id: vw_id7
+      obd:
+        mac: "11:22:33:44:55:66" # OBD adapter address, not car address
+        service_uuid: "..."
+        tx_char_uuid: "..."
+        rx_char_uuid: "..."
+        init_commands: ["ATZ", "ATE0"]
+      sensors:
+        - key: hv_battery_soc
+          mode: "22"
+          pid: "028C"
+          formula: "a/2.5"
+          unit: "%"
+```
 
-Example vehicle configurations and the Fiat 500e (2020) template are maintained in the separate [hassble-config repository](https://github.com/Goddi8/hassble-config).
+The identifiers have distinct purposes:
+
+- `templates[].id`: identifies an entry in the template catalog.
+- `templates[].device.id`: identifies the device profile created by importing it.
+- `templates[].device.vehicle_id`: links the OBD profile to a vehicle in `config.yaml`.
+
+For example, importing the VW and Fiat templates creates two separate local OBD profiles. When the VW is detected, the `vw_id7` profile is eligible for automatic OBD connection; the Fiat profile is not. The reverse applies when the Fiat is detected.
+
+#### Refresh and import workflow
+
+1. In **Sensors**, configure the Git repository and branch.
+2. Load or refresh the Git configuration. This loads `config.yaml` and the vehicle list.
+3. Open **Import template** and press its own **Refresh** action. This fetches `templates.yaml`.
+4. Import the desired templates, for example VW ID.7 and Fiat 500e.
+5. Enable the required sensors. Bind the OBD adapter if its MAC is not defined by the template.
+
+Templates are loaded from the remote repository first, then from the app cache, then from the bundled offline fallback. Refreshing `config.yaml` does not refresh `templates.yaml`.
+
+The maintained VW ID.7 and Fiat 500e templates are in the separate [hassble-config repository](https://github.com/Goddi8/hassble-config).
 
 ### Automatic gateway lifecycle (experimental)
 
@@ -133,9 +164,10 @@ Use HTTPS whenever a VPN-protected connection is not available.
 
 ### Config workflow
 
-- **Git config**: \`config.yaml\` at repo root (fixed filename). Default repo: [eigger/hassble-config](https://github.com/eigger/hassble-config).
-- **Templates**: \`templates.yaml\` at repo root — import from Sensors tab. Bundled fallback in the app when offline.
-- **Local draft devices**: Add OBD/BLE/template in the app → stored locally → **Export YAML** (merged or local-only) → commit to your Git repo manually.
+- **`config.yaml`**: active base configuration, including global defaults and vehicle IDs/car Bluetooth addresses used for presence identification.
+- **`templates.yaml`**: catalog of importable device definitions. Templates describe the OBD/BLE device, adapter settings, initialization commands, sensors, PIDs, and formulas. They become active only after import.
+- **Local draft devices**: imported templates and devices created in the app are stored locally and merged with the base configuration at runtime. Enable the sensors you need. Use **Export YAML** to export drafts for backup or Git maintenance.
+- **Separate refresh actions**: reload the Git config for `config.yaml`; use **Refresh** inside the template picker for `templates.yaml`.
 
 ## Repository Structure
 
