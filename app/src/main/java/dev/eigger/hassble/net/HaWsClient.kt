@@ -366,8 +366,6 @@ class HaWsClient(
             put("manufacturer", android.os.Build.MANUFACTURER)
             put("model", android.os.Build.MODEL)
             put("hw_version", "Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
-            // Preserve last entity states in HA when this gateway disconnects.
-            put("keep_last_state_on_disconnect", true)
         }.toString())
         }
         startBridgeTimeout()

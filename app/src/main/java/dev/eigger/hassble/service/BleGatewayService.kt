@@ -53,6 +53,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -85,6 +86,7 @@ class BleGatewayService : Service() {
     @Volatile private var runtime: BleRuntime? = null
     private val vehiclePresenceMonitor by lazy { VehiclePresenceMonitor(applicationContext) }
     @Volatile private var vehicleLastSeenMs: Long = 0L
+    @Volatile private var activeVehicleId: String? = null
     private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var configJob: Job? = null
@@ -647,13 +649,25 @@ class BleGatewayService : Service() {
                     val advCounters = args[6] as Map<*, *>
                     val tickMs = args[7] as Long
                     val vehicleConfig = config.vehiclePresence
-                    val vehicleDetected = vehiclePresenceMonitor.isPresent(vehicleConfig)
-                    if (vehicleDetected && vehicleConfig.enabled) vehicleLastSeenMs = tickMs
+                    val detectedVehicleId = vehiclePresenceMonitor.detectVehicleId(vehicleConfig)
+                    if (detectedVehicleId != null) {
+                        activeVehicleId = detectedVehicleId
+                        vehicleLastSeenMs = tickMs
+                    }
                     val graceMs = vehicleConfig.disconnectDelaySeconds.coerceAtLeast(0) * 1000L
-                    val vehicleAllowsObd = !vehicleConfig.enabled || vehicleDetected ||
-                        (vehicleLastSeenMs != 0L && tickMs - vehicleLastSeenMs < graceMs)
-                    val obdBlockedIds = if (vehicleAllowsObd) emptySet() else
-                        config.devices.filter { it.source == dev.eigger.hassble.config.Source.obd }.map { it.id }.toSet()
+                    val vehicleStillPresent = vehicleLastSeenMs != 0L && tickMs - vehicleLastSeenMs < graceMs
+                    val selectedVehicleId = if (vehicleConfig.enabled && vehicleStillPresent) activeVehicleId else null
+                    val obdBlockedIds = when {
+                        !vehicleConfig.enabled -> emptySet()
+                        vehicleConfig.vehicles.isNotEmpty() -> config.devices
+                            .filter { it.source == dev.eigger.hassble.config.Source.obd &&
+                                (it.vehicleId == null || it.vehicleId != selectedVehicleId) }
+                            .map { it.id }.toSet()
+                        selectedVehicleId == VehiclePresenceMonitor.LEGACY_VEHICLE_ID -> emptySet()
+                        else -> config.devices
+                            .filter { it.source == dev.eigger.hassble.config.Source.obd }
+                            .map { it.id }.toSet()
+                    }
                     val effectiveEnabled = if (!initialized) defaultEnabled else enabledSensors.filterIsInstance<String>().toSet()
                     SettingsSnapshot(
                         boundMap = boundMap.entries.associate { it.key.toString() to it.value.toString() },

@@ -24,6 +24,15 @@ data class VehiclePresenceConfig(
     @SerialName("wifi_ssid") val wifiSsid: String? = null,
     @SerialName("bluetooth_mac") val bluetoothMac: String? = null,
     @SerialName("disconnect_delay_seconds") val disconnectDelaySeconds: Int = 30,
+    val vehicles: List<VehicleProfileConfig> = emptyList(),
+)
+
+@Serializable
+data class VehicleProfileConfig(
+    val id: String,
+    val name: String,
+    @SerialName("bluetooth_mac") val bluetoothMac: String? = null,
+    @SerialName("wifi_ssid") val wifiSsid: String? = null,
 )
 
 @Serializable
@@ -39,6 +48,7 @@ data class DeviceConfig(
     val id: String,
     val name: String,
     val source: Source,
+    @SerialName("vehicle_id") val vehicleId: String? = null,
     val match: MatchConfig? = null,
     @SerialName("instance_mode") val instanceMode: AdvertisementInstanceMode = AdvertisementInstanceMode.mac,
     // advertisement 전용. 이 시간 동안 광고가 한 건도 없으면 `{instance}_advertisement` binary_sensor를
