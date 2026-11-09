@@ -225,7 +225,7 @@ class MainActivity : ComponentActivity() {
                 }
             },
             onAssociated = { address -> finishVehicleAssociation(true, address) },
-            onFailure = { error -> finishVehicleAssociation(false, error) },
+            onAssociationError = { error -> finishVehicleAssociation(false, error) },
         )
     }
 

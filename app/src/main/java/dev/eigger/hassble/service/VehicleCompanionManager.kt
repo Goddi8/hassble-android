@@ -109,7 +109,7 @@ object VehicleCompanionManager {
         }
         val normalized = address.trim().uppercase()
         if (normalized.isBlank()) {
-            onFailure("Für dieses Fahrzeug ist keine Bluetooth-MAC konfiguriert.")
+            onAssociationError("Für dieses Fahrzeug ist keine Bluetooth-MAC konfiguriert.")
             return
         }
         if (isAssociated(activity, normalized)) {
@@ -143,7 +143,7 @@ object VehicleCompanionManager {
             }
 
             override fun onFailure(errorMessage: CharSequence?) {
-                onFailure(errorMessage?.toString() ?: "Android konnte das Fahrzeug nicht zuordnen.")
+                onAssociationError(errorMessage?.toString() ?: "Android konnte das Fahrzeug nicht zuordnen.")
             }
         }
 
@@ -153,7 +153,7 @@ object VehicleCompanionManager {
             } else {
                 manager(activity).associate(request, callback, Handler(Looper.getMainLooper()))
             }
-        }.onFailure { onFailure(it.localizedMessage ?: it.javaClass.simpleName) }
+        }.onFailure { onAssociationError(it.localizedMessage ?: it.javaClass.simpleName) }
     }
 
     /** API 31/32 return the result through onActivityResult after the association is created. */
