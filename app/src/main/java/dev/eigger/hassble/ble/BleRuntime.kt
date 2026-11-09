@@ -89,6 +89,7 @@ class BleRuntime(
     private var boundDevices: Map<String, String> = emptyMap() // Map of deviceId -> MAC
     private var scanMode: BleScanModeOption = BleScanModeOption.BALANCED
     private var autoConnectDisabledIds: Set<String> = emptySet()
+    private var vehicleBlockedIds: Set<String> = emptySet()
     private var unfilteredScan: Boolean = false
     // 현재 스캔 세션의 필터에 들어간 재연결 대기 MAC. 바뀌면 세션을 다시 세운다.
     @Volatile private var lastWaitMacs: Set<String> = emptySet()
@@ -257,6 +258,7 @@ class BleRuntime(
         this.boundDevices = boundDevices
         this.scanMode = scanMode
         this.autoConnectDisabledIds = autoConnectDisabledIds
+        this.vehicleBlockedIds = vehicleBlockedIds
         this.unfilteredScan = unfilteredScan
         this.advCounters = advCounters
 
@@ -582,11 +584,14 @@ class BleRuntime(
                 }
                 Source.obd -> {
                     val mac = resolved.obd?.mac
-                    if (!mac.isNullOrBlank() && (forceConnect || d.id !in autoConnectDisabledIds)) {
+                    val vehicleAutoConnect = config.vehiclePresence.enabled &&
+                        d.vehicleId != null && d.id !in vehicleBlockedIds
+                    val connectRequested = forceConnect || vehicleAutoConnect
+                    if (!mac.isNullOrBlank() && (connectRequested || d.id !in autoConnectDisabledIds)) {
                         val keys = resolved.sensors.map { it.key }.filter { isEnabled(resolved.id, it) }.toSet()
                         if (keys.isNotEmpty()) {
-                            val autoReconnect = d.id !in autoConnectDisabledIds
-                            var skipScan = forceConnect  // 첫 수동 연결만 스캔 생략, 이후 재연결은 광고 대기
+                            val autoReconnect = d.id !in autoConnectDisabledIds || vehicleAutoConnect
+                            var skipScan = connectRequested  // vehicle presence or manual connect starts immediately
                             obd.connect(
                                 resolved,
                                 keys,

@@ -95,6 +95,7 @@ class BleGatewayService : Service() {
     private var configJob: Job? = null
     private var wsStateJob: Job? = null
     private var heartbeatJob: Job? = null
+    private var vehicleAutoStopJob: Job? = null
     private var settingsJob: Job? = null
     private var currentGitUrl: String = ""
     private var currentGitToken: String? = null
@@ -253,6 +254,29 @@ class BleGatewayService : Service() {
         if (intent == null) {
             LiveEventLogger.logRes(LogType.LINK, R.string.log_service_sticky_restart)
             restoreFromSavedSettings(startId)
+            return START_STICKY
+        }
+
+        if (intent.action == ACTION_START_FOR_VEHICLE) {
+            vehicleAutoStopJob?.cancel()
+            vehicleAutoStopJob = null
+            if (ws == null) restoreFromSavedSettings(startId) else reloadConfig()
+            return START_STICKY
+        }
+
+        if (intent.action == ACTION_STOP_AFTER_VEHICLE_DISCONNECT) {
+            vehicleAutoStopJob?.cancel()
+            vehicleAutoStopJob = scope.launch {
+                delay(VEHICLE_DISCONNECT_DELAY_MS)
+                if (VehicleCompanionManager.autoGatewayEnabled(this@BleGatewayService) &&
+                    VehicleCompanionManager.presentAddresses(this@BleGatewayService).isEmpty()
+                ) {
+                    LiveEventLogger.log(LogType.LINK, "No companion vehicle connected for ${VEHICLE_DISCONNECT_DELAY_MS}ms — stopping gateway")
+                    stopSelf(startId)
+                } else {
+                    LiveEventLogger.log(LogType.LINK, "Vehicle returned during disconnect delay — keep gateway running")
+                }
+            }
             return START_STICKY
         }
 
@@ -482,6 +506,7 @@ class BleGatewayService : Service() {
 
     private fun reloadConfig() {
         configJob?.cancel()
+        vehicleAutoStopJob?.cancel()
         settingsJob?.cancel()
         _serviceError.value = null
         _usingCachedConfig.value = false
@@ -921,6 +946,9 @@ class BleGatewayService : Service() {
         const val EXTRA_GIT_TOKEN = "git_token"
         private const val EXTRA_DEVICE_ID = "device_id"
         private const val ACTION_RELOAD_CONFIG = "dev.eigger.hassble.RELOAD_CONFIG"
+        private const val ACTION_START_FOR_VEHICLE = "dev.eigger.hassble.START_FOR_VEHICLE"
+        private const val ACTION_STOP_AFTER_VEHICLE_DISCONNECT = "dev.eigger.hassble.STOP_AFTER_VEHICLE_DISCONNECT"
+        private const val VEHICLE_DISCONNECT_DELAY_MS = 15_000L
         private const val ACTION_REMOVE_DEVICE = "dev.eigger.hassble.REMOVE_DEVICE"
         private const val ACTION_SET_AUTO_CONNECT = "dev.eigger.hassble.SET_AUTO_CONNECT"
         private const val EXTRA_AUTO_CONNECT = "auto_connect"
@@ -979,6 +1007,29 @@ class BleGatewayService : Service() {
                 context.startService(i)
             }.onFailure { e ->
                 Log.e(TAG, "Failed to reloadConfig", e)
+            }
+        }
+
+        fun startForVehicle(context: Context) {
+            runCatching {
+                ContextCompat.startForegroundService(
+                    context,
+                    Intent(context, BleGatewayService::class.java).setAction(ACTION_START_FOR_VEHICLE),
+                )
+            }.onFailure { e ->
+                Log.e(TAG, "Failed to start BleGatewayService from vehicle presence", e)
+            }
+        }
+
+        fun scheduleVehicleStop(context: Context) {
+            if (!_isServiceRunning.value) return
+            runCatching {
+                context.startService(
+                    Intent(context, BleGatewayService::class.java)
+                        .setAction(ACTION_STOP_AFTER_VEHICLE_DISCONNECT)
+                )
+            }.onFailure { e ->
+                Log.e(TAG, "Failed to schedule vehicle disconnect stop", e)
             }
         }
 

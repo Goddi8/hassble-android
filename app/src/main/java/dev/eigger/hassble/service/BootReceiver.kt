@@ -25,8 +25,14 @@ class BootReceiver : BroadcastReceiver() {
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     withTimeoutOrNull(BOOT_RECEIVER_TIMEOUT_MS) {
+                        val vehicleAutoGateway = repository.vehicleAutoGateway.first()
+                        if (vehicleAutoGateway) {
+                            VehicleCompanionManager.clearPresentAddresses(context)
+                            VehicleCompanionManager.ensureObservingAssociations(context)
+                            Log.d(TAG, "Vehicle automation enabled; waiting for companion Bluetooth events")
+                        }
                         val startOnBoot = repository.startOnBoot.first()
-                        if (startOnBoot) {
+                        if (!vehicleAutoGateway && startOnBoot) {
                             val url = repository.haUrl.first()
                             val token = repository.haToken.first()
                             val refreshToken = repository.haRefreshToken.first()

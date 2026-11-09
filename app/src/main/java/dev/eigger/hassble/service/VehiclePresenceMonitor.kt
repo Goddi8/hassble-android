@@ -48,7 +48,9 @@ internal class VehiclePresenceMonitor(context: Context) {
             ) == PackageManager.PERMISSION_GRANTED
 
     private fun isBluetoothConnected(expectedMac: String?): Boolean {
-        if (expectedMac.isNullOrBlank() || !hasBluetoothConnectPermission()) return false
+        if (expectedMac.isNullOrBlank()) return false
+        if (VehicleCompanionManager.isPresent(appContext, expectedMac)) return true
+        if (!hasBluetoothConnectPermission()) return false
         return synchronized(profiles) {
             profiles.values.any { profile ->
                 runCatching {
