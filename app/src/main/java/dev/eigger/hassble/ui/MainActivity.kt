@@ -1,5 +1,6 @@
 package dev.eigger.hassble.ui
 
+import android.app.Activity
 import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothManager
@@ -147,6 +148,7 @@ import dev.eigger.hassble.config.ObdPresetStore
 import dev.eigger.hassble.config.ValidationIssue
 import dev.eigger.hassble.config.ValidationLevel
 import dev.eigger.hassble.config.Source
+import dev.eigger.hassble.config.VehicleProfileConfig
 import dev.eigger.hassble.ble.DeviceLinkState
 import dev.eigger.hassble.ble.DeviceLinkStatus
 import dev.eigger.hassble.ble.BluetoothAdapterNameGuard
@@ -157,6 +159,7 @@ import dev.eigger.hassble.net.GitHubHelper
 import dev.eigger.hassble.net.HaConnectionTester
 import dev.eigger.hassble.net.UpdateChecker
 import dev.eigger.hassble.service.BleGatewayService
+import dev.eigger.hassble.service.VehicleCompanionManager
 import dev.eigger.hassble.service.CrashReporter
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -172,8 +175,12 @@ import java.io.File
 import androidx.lifecycle.lifecycleScope
 
 class MainActivity : ComponentActivity() {
+    private var pendingVehicleAssociationMac: String? = null
+    private var pendingVehicleAssociationResult: ((Boolean, String) -> Unit)? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        VehicleCompanionManager.ensureObservingAssociations(this)
         BluetoothAdapterNameGuard.resetToInitial(this)
         handleDeepLink(intent)
         setContent {
@@ -203,6 +210,51 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleDeepLink(intent)
+    }
+
+    fun associateVehicle(mac: String, onResult: (Boolean, String) -> Unit) {
+        pendingVehicleAssociationMac = mac
+        pendingVehicleAssociationResult = onResult
+        VehicleCompanionManager.associate(
+            activity = this,
+            address = mac,
+            launchConsent = { sender ->
+                try {
+                    startIntentSenderForResult(sender, REQUEST_COMPANION_ASSOCIATION, null, 0, 0, 0)
+                } catch (e: android.content.IntentSender.SendIntentException) {
+                    finishVehicleAssociation(false, e.localizedMessage ?: "Android-Zuordnungsdialog konnte nicht geöffnet werden.")
+                }
+            },
+            onAssociated = { address -> finishVehicleAssociation(true, address) },
+            onFailure = { error -> finishVehicleAssociation(false, error) },
+        )
+    }
+
+    @Deprecated("Legacy Companion Device Manager result flow for Android 12")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_COMPANION_ASSOCIATION) return
+        val mac = pendingVehicleAssociationMac ?: return
+        if (resultCode == Activity.RESULT_OK && VehicleCompanionManager.completeLegacyAssociation(this, mac)) {
+            finishVehicleAssociation(true, mac)
+        } else {
+            finishVehicleAssociation(false, "Fahrzeugzuordnung wurde abgebrochen oder von Android nicht bestätigt.")
+        }
+    }
+
+    private fun finishVehicleAssociation(success: Boolean, message: String) {
+        if (success) {
+            VehicleCompanionManager.setAutoGatewayEnabled(this, true)
+            pendingVehicleAssociationMac?.let { VehicleCompanionManager.registerPresenceObservation(this, it) }
+        }
+        val callback = pendingVehicleAssociationResult
+        pendingVehicleAssociationMac = null
+        pendingVehicleAssociationResult = null
+        callback?.invoke(success, message)
+    }
+
+    companion object {
+        private const val REQUEST_COMPANION_ASSOCIATION = 9412
     }
 
     private fun handleDeepLink(intent: Intent?) {
@@ -275,6 +327,8 @@ private fun HomeScreen() {
     val enabledSensors by repository.enabledSensors.collectAsState(initial = emptySet())
     val enabledSensorsInitialized by repository.enabledSensorsInitialized.collectAsState(initial = false)
     val startOnBoot by repository.startOnBoot.collectAsState(initial = true)
+    val vehicleAutoGateway by repository.vehicleAutoGateway.collectAsState(initial = false)
+    var companionAddresses by remember { mutableStateOf(VehicleCompanionManager.associatedAddresses(context)) }
     val scanMode by repository.scanMode.collectAsState(initial = dev.eigger.hassble.config.BleScanModeOption.LOW_LATENCY)
     val onboardingCompleteFlow = remember(repository) { repository.onboardingComplete.map<Boolean, Boolean?> { it } }
     val onboardingComplete by onboardingCompleteFlow.collectAsState(initial = null)
@@ -397,6 +451,8 @@ private fun HomeScreen() {
     var missingPermCount by remember { mutableStateOf(0) }
 
     LaunchedEffect(Unit) {
+        if (vehicleAutoGateway) VehicleCompanionManager.ensureObservingAssociations(context)
+        companionAddresses = VehicleCompanionManager.associatedAddresses(context)
         draftDevices = repository.loadDraftDevices()
     }
 
@@ -658,6 +714,29 @@ private fun HomeScreen() {
                     },
                     startOnBoot = startOnBoot,
                     onStartOnBootChange = { scope.launch { repository.saveStartOnBoot(it) } },
+                    vehicleProfiles = effectiveConfig?.vehiclePresence?.vehicles.orEmpty(),
+                    associatedVehicleMacs = companionAddresses,
+                    vehicleAutoGateway = vehicleAutoGateway,
+                    onVehicleAutoGatewayChange = { enabled ->
+                        scope.launch {
+                            repository.saveVehicleAutoGateway(enabled)
+                            if (enabled) VehicleCompanionManager.ensureObservingAssociations(context)
+                        }
+                    },
+                    onAssociateVehicle = { mac ->
+                        (context as? MainActivity)?.associateVehicle(mac) { success, result ->
+                            if (success) {
+                                companionAddresses = VehicleCompanionManager.associatedAddresses(context)
+                                scope.launch {
+                                    repository.saveVehicleAutoGateway(true)
+                                    VehicleCompanionManager.ensureObservingAssociations(context)
+                                }
+                                Toast.makeText(context, "Fahrzeug zugeordnet – automatische Gateway-Steuerung aktiviert", Toast.LENGTH_LONG).show()
+                            } else {
+                                Toast.makeText(context, result, Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    },
                     scanMode = scanMode,
                     onScanModeChange = { scope.launch { repository.saveScanMode(it) } },
                     isBatteryIgnored = isBatteryIgnored,
@@ -1077,6 +1156,11 @@ private fun GatewayTabContent(
     onClearOAuth: () -> Unit,
     startOnBoot: Boolean,
     onStartOnBootChange: (Boolean) -> Unit,
+    vehicleProfiles: List<VehicleProfileConfig>,
+    associatedVehicleMacs: Set<String>,
+    vehicleAutoGateway: Boolean,
+    onVehicleAutoGatewayChange: (Boolean) -> Unit,
+    onAssociateVehicle: (String) -> Unit,
     scanMode: dev.eigger.hassble.config.BleScanModeOption,
     onScanModeChange: (dev.eigger.hassble.config.BleScanModeOption) -> Unit,
     isBatteryIgnored: Boolean,
@@ -1365,7 +1449,68 @@ private fun GatewayTabContent(
                     )
                 }
 
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
                 Spacer(modifier = Modifier.height(12.dp))
+
+                Text("Fahrzeug-Automatik", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color.White)
+                Text(
+                    "Gateway automatisch starten, wenn eines der zugeordneten Fahrzeuge per Bluetooth verbunden wird, und nach dem Trennen wieder beenden.",
+                    fontSize = 12.sp,
+                    color = Color.Gray,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("Automatische Gateway-Steuerung", fontSize = 13.sp, color = Color.White)
+                    Switch(
+                        checked = vehicleAutoGateway,
+                        enabled = associatedVehicleMacs.isNotEmpty(),
+                        onCheckedChange = onVehicleAutoGatewayChange,
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = MaterialTheme.colorScheme.primary),
+                    )
+                }
+                if (vehicleProfiles.isEmpty()) {
+                    Text("Keine Fahrzeuge in vehicle_presence konfiguriert.", fontSize = 12.sp, color = Color.Gray)
+                } else {
+                    vehicleProfiles.forEach { vehicle ->
+                        val mac = vehicle.bluetoothMac.orEmpty().trim()
+                        val associated = mac.isNotBlank() && mac.uppercase() in associatedVehicleMacs
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(vehicle.name, fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.Medium)
+                                Text(
+                                    if (associated) "Android-Zuordnung vorhanden" else if (mac.isBlank()) "Keine Bluetooth-MAC konfiguriert" else mac,
+                                    fontSize = 11.sp,
+                                    color = if (associated) MaterialTheme.colorScheme.secondary else Color.Gray,
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { if (mac.isNotBlank()) onAssociateVehicle(mac) },
+                                enabled = mac.isNotBlank() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            ) {
+                                Text(if (associated) "Erneut zuordnen" else "Zuordnen", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                    Text("Die Fahrzeug-Automatik benötigt Android 12 oder neuer.", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                } else {
+                    Text("Die Zuordnung erfolgt einmalig über einen Android-Systemdialog. Standortdienste müssen dafür eingeschaltet sein.", fontSize = 11.sp, color = Color.Gray)
+                }
+                if (vehicleAutoGateway && startOnBoot) {
+                    Text("Bei aktiver Fahrzeug-Automatik startet das Gateway nicht pauschal beim Android-Start.", fontSize = 11.sp, color = Color.Gray)
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
 
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(text = stringResource(R.string.ble_scan_mode), fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color.White)

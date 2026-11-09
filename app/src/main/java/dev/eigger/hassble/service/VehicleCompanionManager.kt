@@ -104,6 +104,7 @@ object VehicleCompanionManager {
             return
         }
         if (isAssociated(activity, normalized)) {
+            setAutoGatewayEnabled(activity, true)
             registerPresenceObservation(activity, normalized)
             onAssociated(normalized)
             return
@@ -127,6 +128,7 @@ object VehicleCompanionManager {
             override fun onAssociationCreated(associationInfo: AssociationInfo) {
                 val associatedAddress = associationInfo.deviceMacAddress?.toString()
                     ?.takeIf { it.isNotBlank() } ?: normalized
+                setAutoGatewayEnabled(activity, true)
                 registerPresenceObservation(activity, associatedAddress)
                 onAssociated(associatedAddress.uppercase())
             }
