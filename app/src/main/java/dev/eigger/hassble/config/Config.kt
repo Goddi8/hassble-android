@@ -12,10 +12,19 @@ data class GatewayConfig(
     val version: Int = 1,
     val defaults: Defaults = Defaults(),
     val devices: List<DeviceConfig> = emptyList(),
+    @SerialName("vehicle_presence") val vehiclePresence: VehiclePresenceConfig = VehiclePresenceConfig(),
 ) {
     fun allSensorKeys(): Set<String> =
         devices.flatMap { d -> d.sensors.map { "${d.id}/${it.key}" } }.toSet()
 }
+
+@Serializable
+data class VehiclePresenceConfig(
+    val enabled: Boolean = false,
+    @SerialName("wifi_ssid") val wifiSsid: String? = null,
+    @SerialName("bluetooth_mac") val bluetoothMac: String? = null,
+    @SerialName("disconnect_delay_seconds") val disconnectDelaySeconds: Int = 30,
+)
 
 @Serializable
 data class Defaults(val publish: PublishRule = PublishRule())

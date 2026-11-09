@@ -1,3 +1,10 @@
+# Vehicle presence gate: OBD stays enabled while the car Wi-Fi OR Bluetooth is connected.
+vehicle_presence:
+  enabled: true
+  wifi_ssid: "" # Optional: enter vehicle Wi-Fi SSID; empty disables Wi-Fi detection
+  bluetooth_mac: "10:31:2C:D7:E4:5E"
+  disconnect_delay_seconds: 30
+
 devices:
   - id: example_sensor
     name: "Example BLE Sensor"

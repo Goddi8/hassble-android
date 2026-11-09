@@ -83,6 +83,8 @@ class BleGatewayService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + coroutineExceptionHandler)
     private var ws: HaWsClient? = null
     @Volatile private var runtime: BleRuntime? = null
+    private val vehiclePresenceMonitor by lazy { VehiclePresenceMonitor(applicationContext) }
+    @Volatile private var vehicleLastSeenMs: Long = 0L
     private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var configJob: Job? = null
@@ -633,6 +635,7 @@ class BleGatewayService : Service() {
                         repository.autoConnectDisabled,
                         LiveEventLogger.includeAdvLogsFlow,
                         repository.advCounters,
+                        flow { while (true) { emit(System.currentTimeMillis()); delay(3000) } },
                     )
                 ) { args ->
                     val boundMap = args[0] as Map<*, *>
@@ -642,12 +645,21 @@ class BleGatewayService : Service() {
                     val autoConnectDisabled = args[4] as Set<*>
                     val unfilteredScan = args[5] as Boolean
                     val advCounters = args[6] as Map<*, *>
+                    val tickMs = args[7] as Long
+                    val vehicleConfig = config.vehiclePresence
+                    val vehicleDetected = vehiclePresenceMonitor.isPresent(vehicleConfig)
+                    if (vehicleDetected && vehicleConfig.enabled) vehicleLastSeenMs = tickMs
+                    val graceMs = vehicleConfig.disconnectDelaySeconds.coerceAtLeast(0) * 1000L
+                    val vehicleAllowsObd = !vehicleConfig.enabled || vehicleDetected ||
+                        (vehicleLastSeenMs != 0L && tickMs - vehicleLastSeenMs < graceMs)
+                    val obdBlockedIds = if (vehicleAllowsObd) emptySet() else
+                        config.devices.filter { it.source == dev.eigger.hassble.config.Source.obd }.map { it.id }.toSet()
                     val effectiveEnabled = if (!initialized) defaultEnabled else enabledSensors.filterIsInstance<String>().toSet()
                     SettingsSnapshot(
                         boundMap = boundMap.entries.associate { it.key.toString() to it.value.toString() },
                         enabledSensors = effectiveEnabled,
                         scanMode = scanMode,
-                        autoConnectDisabled = autoConnectDisabled.filterIsInstance<String>().toSet(),
+                        autoConnectDisabled = autoConnectDisabled.filterIsInstance<String>().toSet() + obdBlockedIds,
                         unfilteredScan = unfilteredScan,
                         advCounters = advCounters.entries.associate { it.key.toString() to ((it.value as? Number)?.toInt() ?: 0) },
                     )
@@ -717,6 +729,7 @@ class BleGatewayService : Service() {
         wsStateJob?.cancel()
         heartbeatJob?.cancel()
         runtime?.stop()
+        runCatching { vehiclePresenceMonitor.close() }
         ws?.close()
         runtime = null
         ws = null
