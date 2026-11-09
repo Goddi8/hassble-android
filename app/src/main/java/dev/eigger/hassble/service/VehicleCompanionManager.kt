@@ -101,10 +101,10 @@ object VehicleCompanionManager {
         address: String,
         launchConsent: (IntentSender) -> Unit,
         onAssociated: (String) -> Unit,
-        onFailure: (String) -> Unit,
+        onAssociationError: (String) -> Unit,
     ) {
         if (!isSupported(activity)) {
-            onFailure("Die Fahrzeug-Automatik benötigt Android 12 oder neuer mit Companion-Device-Unterstützung.")
+            onAssociationError("Die Fahrzeug-Automatik benötigt Android 12 oder neuer mit Companion-Device-Unterstützung.")
             return
         }
         val normalized = address.trim().uppercase()
