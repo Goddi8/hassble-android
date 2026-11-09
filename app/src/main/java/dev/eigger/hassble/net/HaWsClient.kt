@@ -360,6 +360,7 @@ class HaWsClient(
         send(buildJsonObject {
             put("id", msgId)
             put("type", "$WS_DOMAIN/connect")
+            put("keep_last_state_on_disconnect", true)
             put("gateway_id", gatewayId)
             put("name", gatewayName)
             put("sw_version", BuildConfig.VERSION_NAME)
