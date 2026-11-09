@@ -9,7 +9,7 @@ templates:
       source: obd
       vehicle_id: vw_id7
       obd:
-        mac: "41:42:86:9A:DB:63"
+        # mac: "AA:BB:CC:DD:EE:FF" # Optional: bind the adapter in the app instead.
         service_uuid: "e7810a71-73ae-499d-8c15-faa9aef0c3f2"
         tx_char_uuid: "bef8d6c9-9c21-4c9e-b632-bd58c1009f9f"
         rx_char_uuid: "bef8d6c9-9c21-4c9e-b632-bd58c1009f9f"
