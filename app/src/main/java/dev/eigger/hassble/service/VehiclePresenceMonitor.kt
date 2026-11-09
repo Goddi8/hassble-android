@@ -29,10 +29,13 @@ internal class VehiclePresenceMonitor(context: Context) {
     }
 
     init {
-        if (adapter != null && hasBluetoothConnectPermission()) {
-            // Android reports connected car hands-free and media devices through these profiles.
-            listOf(BluetoothProfile.HEADSET, BluetoothProfile.A2DP).forEach { profile ->
-                runCatching { adapter.getProfileProxy(appContext, listener, profile) }
+        if (hasBluetoothConnectPermission()) {
+            // Keep the nullable adapter check local to the receiver used below.
+            adapter?.let { bluetoothAdapter ->
+                // Android reports connected car hands-free and media devices through these profiles.
+                listOf(BluetoothProfile.HEADSET, BluetoothProfile.A2DP).forEach { profile ->
+                    runCatching { bluetoothAdapter.getProfileProxy(appContext, listener, profile) }
+                }
             }
         }
     }
