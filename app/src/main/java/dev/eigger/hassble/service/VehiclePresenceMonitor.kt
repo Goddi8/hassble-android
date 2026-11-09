@@ -65,20 +65,17 @@ internal class VehiclePresenceMonitor(context: Context) {
             actual.equals(expectedSsid.trim().trim('"'), ignoreCase = false)
     }
 
-    /**
-     * Bluetooth wins over Wi-Fi so a connected vehicle's identity is not shadowed by a shared Wi-Fi SSID.
-     * Returns the legacy sentinel when the old single-vehicle config matches.
-     */
-    fun detectVehicleId(config: VehiclePresenceConfig): String? {
-        if (!config.enabled) return null
+    /** Returns every configured vehicle currently visible through Bluetooth or Wi-Fi. */
+    fun detectVehicleIds(config: VehiclePresenceConfig): Set<String> {
+        if (!config.enabled) return emptySet()
         if (config.vehicles.isNotEmpty()) {
-            config.vehicles.firstOrNull { isBluetoothConnected(it.bluetoothMac) }?.let { return it.id }
-            config.vehicles.firstOrNull { isWifiConnected(it.wifiSsid) }?.let { return it.id }
-            return null
+            return config.vehicles.filter { vehicle ->
+                isBluetoothConnected(vehicle.bluetoothMac) || isWifiConnected(vehicle.wifiSsid)
+            }.map { it.id }.toSet()
         }
         return if (isBluetoothConnected(config.bluetoothMac) || isWifiConnected(config.wifiSsid)) {
-            LEGACY_VEHICLE_ID
-        } else null
+            setOf(LEGACY_VEHICLE_ID)
+        } else emptySet()
     }
 
     fun close() {

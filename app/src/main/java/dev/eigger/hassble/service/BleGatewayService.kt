@@ -86,8 +86,9 @@ class BleGatewayService : Service() {
     @Volatile private var runtime: BleRuntime? = null
     private val vehiclePresenceMonitor by lazy { VehiclePresenceMonitor(applicationContext) }
     @Volatile private var vehicleLastSeenMs: Long = 0L
-    @Volatile private var activeVehicleId: String? = null
     @Volatile private var activeVehicleState: String = "Kein Fahrzeug erkannt"
+    private val vehicleLastSeenById = mutableMapOf<String, Long>()
+    private val lastPublishedVehiclePresence = mutableMapOf<String, Boolean>()
     private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var configJob: Job? = null
@@ -650,32 +651,39 @@ class BleGatewayService : Service() {
                     val advCounters = args[6] as Map<*, *>
                     val tickMs = args[7] as Long
                     val vehicleConfig = config.vehiclePresence
-                    val detectedVehicleId = vehiclePresenceMonitor.detectVehicleId(vehicleConfig)
-                    if (detectedVehicleId != null) {
-                        activeVehicleId = detectedVehicleId
-                        vehicleLastSeenMs = tickMs
-                    }
+                    val detectedVehicleIds = vehiclePresenceMonitor.detectVehicleIds(vehicleConfig)
+                    detectedVehicleIds.forEach { vehicleLastSeenById[it] = tickMs }
                     val graceMs = vehicleConfig.disconnectDelaySeconds.coerceAtLeast(0) * 1000L
-                    val vehicleStillPresent = vehicleLastSeenMs != 0L && tickMs - vehicleLastSeenMs < graceMs
-                    val selectedVehicleId = if (vehicleConfig.enabled && vehicleStillPresent) activeVehicleId else null
+                    val presentVehicleIds = if (!vehicleConfig.enabled) emptySet() else {
+                        vehicleLastSeenById.filterValues { tickMs - it < graceMs }.keys
+                    }
+                    vehicleLastSeenById.keys.retainAll(
+                        if (vehicleConfig.vehicles.isNotEmpty()) vehicleConfig.vehicles.map { it.id }.toSet()
+                        else setOf(VehiclePresenceMonitor.LEGACY_VEHICLE_ID)
+                    )
                     val activeVehicleName = when {
                         !vehicleConfig.enabled -> "Fahrzeugerkennung deaktiviert"
-                        selectedVehicleId == null -> "Kein Fahrzeug erkannt"
-                        selectedVehicleId == VehiclePresenceMonitor.LEGACY_VEHICLE_ID -> "Fahrzeug erkannt"
-                        else -> vehicleConfig.vehicles.firstOrNull { it.id == selectedVehicleId }?.name ?: selectedVehicleId
+                        presentVehicleIds.isEmpty() -> "Kein Fahrzeug erkannt"
+                        vehicleConfig.vehicles.isEmpty() -> "Fahrzeug erkannt"
+                        else -> vehicleConfig.vehicles.filter { it.id in presentVehicleIds }.joinToString(", ") { it.name }
                     }
-                    if (activeVehicleState != activeVehicleName) {
-                        activeVehicleState = activeVehicleName
-                        ws?.takeIf { it.connectionState.value == ConnectionState.Connected }
-                            ?.sendStates(listOf(gatewayId() + "_active_vehicle" to activeVehicleName))
+                    val presenceUpdates = vehicleConfig.vehicles.mapNotNull { vehicle ->
+                        val isPresent = vehicle.id in presentVehicleIds
+                        val previous = lastPublishedVehiclePresence.put(vehicle.id, isPresent)
+                        if (previous == isPresent) null else
+                            (gatewayId() + "_vehicle_" + vehicle.id + "_present") to if (isPresent) "on" else "off"
                     }
+                    if (activeVehicleState != activeVehicleName) activeVehicleState = activeVehicleName
+                    ws?.takeIf { it.connectionState.value == ConnectionState.Connected }?.sendStates(
+                        presenceUpdates + (gatewayId() + "_active_vehicle" to activeVehicleState)
+                    )
                     val obdBlockedIds = when {
                         !vehicleConfig.enabled -> emptySet()
                         vehicleConfig.vehicles.isNotEmpty() -> config.devices
                             .filter { it.source == dev.eigger.hassble.config.Source.obd &&
-                                (it.vehicleId == null || it.vehicleId != selectedVehicleId) }
+                                (it.vehicleId == null || it.vehicleId !in presentVehicleIds) }
                             .map { it.id }.toSet()
-                        selectedVehicleId == VehiclePresenceMonitor.LEGACY_VEHICLE_ID -> emptySet()
+                        VehiclePresenceMonitor.LEGACY_VEHICLE_ID in presentVehicleIds -> emptySet()
                         else -> config.devices
                             .filter { it.source == dev.eigger.hassble.config.Source.obd }
                             .map { it.id }.toSet()
@@ -734,6 +742,17 @@ class BleGatewayService : Service() {
             name = "Aktives Fahrzeug", device = phoneDevice,
             icon = "mdi:car-electric", entityCategory = "diagnostic",
         ))
+        currentConfig?.vehiclePresence?.vehicles?.forEach { vehicle ->
+            client.declareEntity(EntityMsg(
+                id = 0,
+                uniqueId = "${gatewayId()}_vehicle_${vehicle.id}_present",
+                platform = "binary_sensor",
+                name = "${vehicle.name} erkannt",
+                device = phoneDevice,
+                deviceClass = "presence",
+                entityCategory = "diagnostic",
+            ))
+        }
     }
 
     private fun publishGatewayStates(client: HaWsClient?) {
