@@ -360,14 +360,13 @@ class HaWsClient(
         send(buildJsonObject {
             put("id", msgId)
             put("type", "$WS_DOMAIN/connect")
+            put("keep_last_state_on_disconnect", true)
             put("gateway_id", gatewayId)
             put("name", gatewayName)
             put("sw_version", BuildConfig.VERSION_NAME)
             put("manufacturer", android.os.Build.MANUFACTURER)
             put("model", android.os.Build.MODEL)
             put("hw_version", "Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
-            // Preserve last entity states in HA when this gateway disconnects.
-            put("keep_last_state_on_disconnect", true)
         }.toString())
         }
         startBridgeTimeout()

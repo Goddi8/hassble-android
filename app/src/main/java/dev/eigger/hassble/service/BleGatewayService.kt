@@ -53,6 +53,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -61,6 +62,7 @@ private data class SettingsSnapshot(
     val enabledSensors: Set<String>,
     val scanMode: dev.eigger.hassble.config.BleScanModeOption,
     val autoConnectDisabled: Set<String>,
+    val vehicleBlockedIds: Set<String>,
     val unfilteredScan: Boolean,
     val advCounters: Map<String, Int> = emptyMap(),
 )
@@ -85,11 +87,15 @@ class BleGatewayService : Service() {
     @Volatile private var runtime: BleRuntime? = null
     private val vehiclePresenceMonitor by lazy { VehiclePresenceMonitor(applicationContext) }
     @Volatile private var vehicleLastSeenMs: Long = 0L
+    @Volatile private var activeVehicleState: String = "Kein Fahrzeug erkannt"
+    private val vehicleLastSeenById = mutableMapOf<String, Long>()
+    private val lastPublishedVehiclePresence = mutableMapOf<String, Boolean>()
     private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var configJob: Job? = null
     private var wsStateJob: Job? = null
     private var heartbeatJob: Job? = null
+    private var vehicleAutoStopJob: Job? = null
     private var settingsJob: Job? = null
     private var currentGitUrl: String = ""
     private var currentGitToken: String? = null
@@ -248,6 +254,29 @@ class BleGatewayService : Service() {
         if (intent == null) {
             LiveEventLogger.logRes(LogType.LINK, R.string.log_service_sticky_restart)
             restoreFromSavedSettings(startId)
+            return START_STICKY
+        }
+
+        if (intent.action == ACTION_START_FOR_VEHICLE) {
+            vehicleAutoStopJob?.cancel()
+            vehicleAutoStopJob = null
+            if (ws == null) restoreFromSavedSettings(startId)
+            return START_STICKY
+        }
+
+        if (intent.action == ACTION_STOP_AFTER_VEHICLE_DISCONNECT) {
+            vehicleAutoStopJob?.cancel()
+            vehicleAutoStopJob = scope.launch {
+                delay(VEHICLE_DISCONNECT_DELAY_MS)
+                if (VehicleCompanionManager.autoGatewayEnabled(this@BleGatewayService) &&
+                    VehicleCompanionManager.presentAddresses(this@BleGatewayService).isEmpty()
+                ) {
+                    LiveEventLogger.log(LogType.LINK, "No companion vehicle connected for ${VEHICLE_DISCONNECT_DELAY_MS}ms — stopping gateway")
+                    stopSelf(startId)
+                } else {
+                    LiveEventLogger.log(LogType.LINK, "Vehicle returned during disconnect delay — keep gateway running")
+                }
+            }
             return START_STICKY
         }
 
@@ -477,6 +506,7 @@ class BleGatewayService : Service() {
 
     private fun reloadConfig() {
         configJob?.cancel()
+        vehicleAutoStopJob?.cancel()
         settingsJob?.cancel()
         _serviceError.value = null
         _usingCachedConfig.value = false
@@ -647,19 +677,50 @@ class BleGatewayService : Service() {
                     val advCounters = args[6] as Map<*, *>
                     val tickMs = args[7] as Long
                     val vehicleConfig = config.vehiclePresence
-                    val vehicleDetected = vehiclePresenceMonitor.isPresent(vehicleConfig)
-                    if (vehicleDetected && vehicleConfig.enabled) vehicleLastSeenMs = tickMs
+                    val detectedVehicleIds = vehiclePresenceMonitor.detectVehicleIds(vehicleConfig)
+                    detectedVehicleIds.forEach { vehicleLastSeenById[it] = tickMs }
                     val graceMs = vehicleConfig.disconnectDelaySeconds.coerceAtLeast(0) * 1000L
-                    val vehicleAllowsObd = !vehicleConfig.enabled || vehicleDetected ||
-                        (vehicleLastSeenMs != 0L && tickMs - vehicleLastSeenMs < graceMs)
-                    val obdBlockedIds = if (vehicleAllowsObd) emptySet() else
-                        config.devices.filter { it.source == dev.eigger.hassble.config.Source.obd }.map { it.id }.toSet()
+                    val presentVehicleIds = if (!vehicleConfig.enabled) emptySet() else {
+                        vehicleLastSeenById.filterValues { tickMs - it < graceMs }.keys
+                    }
+                    vehicleLastSeenById.keys.retainAll(
+                        if (vehicleConfig.vehicles.isNotEmpty()) vehicleConfig.vehicles.map { it.id }.toSet()
+                        else setOf(VehiclePresenceMonitor.LEGACY_VEHICLE_ID)
+                    )
+                    val activeVehicleName = when {
+                        !vehicleConfig.enabled -> "Fahrzeugerkennung deaktiviert"
+                        presentVehicleIds.isEmpty() -> "Kein Fahrzeug erkannt"
+                        vehicleConfig.vehicles.isEmpty() -> "Fahrzeug erkannt"
+                        else -> vehicleConfig.vehicles.filter { it.id in presentVehicleIds }.joinToString(", ") { it.name }
+                    }
+                    val presenceUpdates = vehicleConfig.vehicles.mapNotNull { vehicle ->
+                        val isPresent = vehicle.id in presentVehicleIds
+                        val previous = lastPublishedVehiclePresence.put(vehicle.id, isPresent)
+                        if (previous == isPresent) null else
+                            (gatewayId() + "_vehicle_" + vehicle.id + "_present") to if (isPresent) "on" else "off"
+                    }
+                    if (activeVehicleState != activeVehicleName) activeVehicleState = activeVehicleName
+                    ws?.takeIf { it.connectionState.value == ConnectionState.Connected }?.sendStates(
+                        presenceUpdates + (gatewayId() + "_active_vehicle" to activeVehicleState)
+                    )
+                    val obdBlockedIds = when {
+                        !vehicleConfig.enabled -> emptySet()
+                        vehicleConfig.vehicles.isNotEmpty() -> config.devices
+                            .filter { it.source == dev.eigger.hassble.config.Source.obd &&
+                                (it.vehicleId == null || it.vehicleId !in presentVehicleIds) }
+                            .map { it.id }.toSet()
+                        VehiclePresenceMonitor.LEGACY_VEHICLE_ID in presentVehicleIds -> emptySet()
+                        else -> config.devices
+                            .filter { it.source == dev.eigger.hassble.config.Source.obd }
+                            .map { it.id }.toSet()
+                    }
                     val effectiveEnabled = if (!initialized) defaultEnabled else enabledSensors.filterIsInstance<String>().toSet()
                     SettingsSnapshot(
                         boundMap = boundMap.entries.associate { it.key.toString() to it.value.toString() },
                         enabledSensors = effectiveEnabled,
                         scanMode = scanMode,
-                        autoConnectDisabled = autoConnectDisabled.filterIsInstance<String>().toSet() + obdBlockedIds,
+                        autoConnectDisabled = autoConnectDisabled.filterIsInstance<String>().toSet(),
+                        vehicleBlockedIds = obdBlockedIds,
                         unfilteredScan = unfilteredScan,
                         advCounters = advCounters.entries.associate { it.key.toString() to ((it.value as? Number)?.toInt() ?: 0) },
                     )
@@ -672,6 +733,7 @@ class BleGatewayService : Service() {
                         snapshot.autoConnectDisabled,
                         snapshot.unfilteredScan,
                         snapshot.advCounters,
+                        snapshot.vehicleBlockedIds,
                     )
                 } }
             }
@@ -703,6 +765,22 @@ class BleGatewayService : Service() {
             name = "Service Status", device = phoneDevice,
             deviceClass = "running", entityCategory = "diagnostic",
         ))
+        client.declareEntity(EntityMsg(
+            id = 0, uniqueId = "${gatewayId()}_active_vehicle", platform = "sensor",
+            name = "Aktives Fahrzeug", device = phoneDevice,
+            icon = "mdi:car-electric", entityCategory = "diagnostic",
+        ))
+        currentConfig?.vehiclePresence?.vehicles?.forEach { vehicle ->
+            client.declareEntity(EntityMsg(
+                id = 0,
+                uniqueId = "${gatewayId()}_vehicle_${vehicle.id}_present",
+                platform = "binary_sensor",
+                name = "${vehicle.name} erkannt",
+                device = phoneDevice,
+                deviceClass = "presence",
+                entityCategory = "diagnostic",
+            ))
+        }
     }
 
     private fun publishGatewayStates(client: HaWsClient?) {
@@ -711,6 +789,7 @@ class BleGatewayService : Service() {
         c.sendStates(listOf(
             "${gatewayId()}_connection" to "on",
             "${gatewayId()}_service_status" to "on",
+            "${gatewayId()}_active_vehicle" to activeVehicleState,
         ))
     }
 
@@ -867,6 +946,9 @@ class BleGatewayService : Service() {
         const val EXTRA_GIT_TOKEN = "git_token"
         private const val EXTRA_DEVICE_ID = "device_id"
         private const val ACTION_RELOAD_CONFIG = "dev.eigger.hassble.RELOAD_CONFIG"
+        private const val ACTION_START_FOR_VEHICLE = "dev.eigger.hassble.START_FOR_VEHICLE"
+        private const val ACTION_STOP_AFTER_VEHICLE_DISCONNECT = "dev.eigger.hassble.STOP_AFTER_VEHICLE_DISCONNECT"
+        private const val VEHICLE_DISCONNECT_DELAY_MS = 15_000L
         private const val ACTION_REMOVE_DEVICE = "dev.eigger.hassble.REMOVE_DEVICE"
         private const val ACTION_SET_AUTO_CONNECT = "dev.eigger.hassble.SET_AUTO_CONNECT"
         private const val EXTRA_AUTO_CONNECT = "auto_connect"
@@ -925,6 +1007,29 @@ class BleGatewayService : Service() {
                 context.startService(i)
             }.onFailure { e ->
                 Log.e(TAG, "Failed to reloadConfig", e)
+            }
+        }
+
+        fun startForVehicle(context: Context) {
+            runCatching {
+                ContextCompat.startForegroundService(
+                    context,
+                    Intent(context, BleGatewayService::class.java).setAction(ACTION_START_FOR_VEHICLE),
+                )
+            }.onFailure { e ->
+                Log.e(TAG, "Failed to start BleGatewayService from vehicle presence", e)
+            }
+        }
+
+        fun scheduleVehicleStop(context: Context) {
+            if (!_isServiceRunning.value) return
+            runCatching {
+                context.startService(
+                    Intent(context, BleGatewayService::class.java)
+                        .setAction(ACTION_STOP_AFTER_VEHICLE_DISCONNECT)
+                )
+            }.onFailure { e ->
+                Log.e(TAG, "Failed to schedule vehicle disconnect stop", e)
             }
         }
 

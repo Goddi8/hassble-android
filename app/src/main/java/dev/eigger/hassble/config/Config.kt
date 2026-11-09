@@ -24,6 +24,15 @@ data class VehiclePresenceConfig(
     @SerialName("wifi_ssid") val wifiSsid: String? = null,
     @SerialName("bluetooth_mac") val bluetoothMac: String? = null,
     @SerialName("disconnect_delay_seconds") val disconnectDelaySeconds: Int = 30,
+    val vehicles: List<VehicleProfileConfig> = emptyList(),
+)
+
+@Serializable
+data class VehicleProfileConfig(
+    val id: String,
+    val name: String,
+    @SerialName("bluetooth_mac") val bluetoothMac: String? = null,
+    @SerialName("wifi_ssid") val wifiSsid: String? = null,
 )
 
 @Serializable
@@ -39,6 +48,7 @@ data class DeviceConfig(
     val id: String,
     val name: String,
     val source: Source,
+    @SerialName("vehicle_id") val vehicleId: String? = null,
     val match: MatchConfig? = null,
     @SerialName("instance_mode") val instanceMode: AdvertisementInstanceMode = AdvertisementInstanceMode.mac,
     // advertisement 전용. 이 시간 동안 광고가 한 건도 없으면 `{instance}_advertisement` binary_sensor를
@@ -84,7 +94,7 @@ data class ObdConfig(
     // pre_commands가 없는 센서를 폴링하기 직전에 보낼 명령 (예: ["ATSH7E0"]).
     // 헤더를 바꾸는 센서가 남긴 상태를 되돌리는 용도. 비우면 종전대로 마지막 헤더가 유지된다.
     @SerialName("default_commands") val defaultCommands: List<String> = emptyList(),
-    @SerialName("auto_connect") val autoConnect: Boolean = true,
+    @SerialName("auto_connect") val autoConnect: Boolean = false,
 )
 
 @Serializable

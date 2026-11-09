@@ -33,6 +33,61 @@ devices: [ ... ]                    # 아래 참조
 > HA 접속(URL/토큰)은 **게이트웨이 탭**, Git 저장소는 **센서 탭**에서 입력한다.
 > 자격증명을 git에 올리지 않기 위함. HA 컴포넌트는 설치만 하면 되고 별도 설정이 없다.
 
+## Fahrzeugprofile und automatische Auswahl
+
+Mehrere Fahrzeuge können über ihre **verbundene Bluetooth-Freisprecheinrichtung bzw. Audioverbindung** erkannt werden. Bluetooth wird vor WLAN ausgewertet. Die Fahrzeug-MAC ist nicht die MAC des OBD-Dongles.
+
+```yaml
+vehicle_presence:
+  enabled: true
+  disconnect_delay_seconds: 30
+  vehicles:
+    - id: vw_id7
+      name: "VW ID.7"
+      bluetooth_mac: "10:31:2C:D7:E4:5E"
+      # wifi_ssid: "VW_ID7_WIFI" # optionaler Fallback
+    - id: second_car
+      name: "Zweitwagen"
+      bluetooth_mac: "AA:BB:CC:DD:EE:FF"
+```
+
+Jedes OBD-Gerät wird mit `vehicle_id` genau einem Eintrag unter `vehicle_presence.vehicles` zugeordnet. Das OBD-Gerät enthält die fahrzeugspezifische ELM327-Initialisierung sowie seine Sensor-PIDs und Formeln:
+
+```yaml
+devices:
+  - id: vw_id7_obd
+    name: "VW ID.7 OBD"
+    source: obd
+    vehicle_id: vw_id7
+    obd:
+      mac: "41:42:86:9A:DB:63" # OBD-Dongle, nicht Fahrzeug-Bluetooth
+      service_uuid: "E7810A71-73AE-499D-8C15-FAA9AEF0C3F2"
+      tx_char_uuid: "BEF8D6C9-9C21-4C9E-B632-BD58C1009F9F"
+      rx_char_uuid: "BEF8D6C9-9C21-4C9E-B632-BD58C1009F9F"
+      init_commands:
+        - "ATZ"
+        - "ATE0"
+        - "ATL0"
+        - "ATS0"
+        - "ATH0"
+        - "ATSP7"
+        - "ATCP17"
+        - "ATSHFC007B"
+        - "ATCRA17FE007B"
+        - "ATFCSH17FC007B"
+    sensors:
+      - key: hv_soc
+        mode: "22"
+        pid: "028C"
+        formula: "b/2.5"
+        unit: "%"
+        update_interval: 10s
+```
+
+Für ein weiteres Auto wird ein zweiter `vehicles`-Eintrag und ein eigenes OBD-Gerät mit dessen `vehicle_id`, OBD-Adapterparametern, Initialisierungsbefehlen und Sensoren ergänzt. OBD-Geräte mit einem anderen `vehicle_id` werden während der Fahrt mit dem jeweils anderen Fahrzeug nicht verbunden. Bei Fahrzeugwechsel wird das bisherige Profil nach Ablauf der konfigurierten Verzögerung getrennt.
+
+Die bisherige Einzel-Fahrzeugkonfiguration mit `wifi_ssid` und `bluetooth_mac` auf oberster Ebene bleibt aus Kompatibilitätsgründen unterstützt.
+
 ## device 공통
 
 | 필드 | 필수 | 설명 |

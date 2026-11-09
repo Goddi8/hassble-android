@@ -1,65 +1,904 @@
 # Offline fallback — primary source is templates.yaml in the Git config repo.
 templates:
-  - id: jaalee_jht
-    name: "Jaalee JHT"
-    description: "Temperature / humidity / battery (iBeacon, Apple 0x004C)"
+  - id: vw_id7_meb_ios_vlink_full
+    name: "VW ID.7 MEB – IOS-VLINK (erweitert)"
+    description: "ID.7 UDS-Sensoren aus CarScanner-Log und EV-MEB-Signaldefinitionen"
     device:
-      id: jaalee_jht
-      name: "Jaalee JHT"
-      source: advertisement
-      instance_mode: mac
-      match:
-        service_data_uuid: "F51C"
-        manufacturer_id: 76
-        manufacturer_min_length: 24
-      sensors:
-        - key: temperature
-          device_class: temperature
-          unit: "°C"
-          state_class: measurement
-          accuracy_decimals: 1
-          source_field: manufacturer_data
-          decode:
-            offset: 18
-            length: 2
-            type: int16
-            endian: big
-            scale: 0.1
-        - key: humidity
-          device_class: humidity
-          unit: "%"
-          state_class: measurement
-          accuracy_decimals: 1
-          source_field: manufacturer_data
-          decode:
-            offset: 20
-            length: 2
-            type: uint16
-            endian: big
-            scale: 0.1
-        - key: battery
-          device_class: battery
-          unit: "%"
-          state_class: measurement
-          source_field: manufacturer_data
-          decode:
-            offset: 23
-            length: 1
-            type: uint8
-
-  - id: obd_standard
-    name: "OBD-II (standard PIDs)"
-    description: "RPM, speed, coolant, fuel level — bind ELM327 adapter in app"
-    device:
-      id: obd_vehicle
-      name: "OBD Vehicle"
+      id: vw_id7_pro_meb
+      name: "VW ID.7 Pro – HV-Batterie"
       source: obd
+      vehicle_id: vw_id7
       obd:
-        service_uuid: "FFF0"
-        tx_char_uuid: "FFF2"
-        rx_char_uuid: "FFF1"
+        # mac: "AA:BB:CC:DD:EE:FF" # Optional: bind the adapter in the app instead.
+        service_uuid: "e7810a71-73ae-499d-8c15-faa9aef0c3f2"
+        tx_char_uuid: "bef8d6c9-9c21-4c9e-b632-bd58c1009f9f"
+        rx_char_uuid: "bef8d6c9-9c21-4c9e-b632-bd58c1009f9f"
+        tx_delay: "150ms"
+        init_commands:
+          - "ATAT1"
+          - "ATST96"
+          - "ATSP7"
+          - "ATCP17"
+          - "ATSHFC007B"
+          - "ATCRA17FE007B"
+          - "ATFCSH17FC007B"
+          - "ATFCSD300000"
+          - "ATFCSM1"
       sensors:
-        - { key: rpm, preset: rpm, update_interval: 1s }
-        - { key: speed, preset: speed, update_interval: 1s }
-        - { key: coolant_temp, preset: coolant_temp, update_interval: 10s }
-        - { key: fuel_level, preset: fuel_level, update_interval: 30s }
+        - key: hv_battery_soc
+          mode: "22"
+          pid: "028C"
+          formula: "a/2.5"
+          update_interval: "5s"
+          unit: "%"
+          device_class: "battery"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSP7"
+            - "ATSP7"
+            - "ATSP7"
+            - "ATSP7"
+            - "ATSHFC007B"
+            - "ATCP17"
+            - "ATCRA17FE007B"
+            - "ATFCSH17FC007B"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: hv_battery_voltage
+          mode: "22"
+          pid: "1E3B"
+          formula: "((a*256+b)/4)"
+          update_interval: "5s"
+          unit: "V"
+          device_class: "voltage"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSP7"
+            - "ATSP7"
+            - "ATSP7"
+            - "ATSP7"
+            - "ATSHFC007B"
+            - "ATCP17"
+            - "ATCRA17FE007B"
+            - "ATFCSH17FC007B"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: hv_battery_temperature
+          mode: "22"
+          pid: "2A0B"
+          formula: "(a/2)-40"
+          update_interval: "30s"
+          unit: "°C"
+          device_class: "temperature"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSP7"
+            - "ATSP7"
+            - "ATSP7"
+            - "ATSP7"
+            - "ATSHFC007B"
+            - "ATCP17"
+            - "ATCRA17FE007B"
+            - "ATFCSH17FC007B"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: charging_status
+          mode: "22"
+          pid: "7448"
+          formula: "floor(a/4)%2"
+          update_interval: "10s"
+          state_class: "measurement"
+          accuracy_decimals: 0
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSP7"
+            - "ATSP7"
+            - "ATSP7"
+            - "ATSP7"
+            - "ATSHFC007B"
+            - "ATCP17"
+            - "ATCRA17FE007B"
+            - "ATFCSH17FC007B"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: odometer
+          mode: "22"
+          pid: "295A"
+          formula: "(a*65536+b*256+c)"
+          update_interval: "60s"
+          unit: "km"
+          device_class: "distance"
+          state_class: "total_increasing"
+          accuracy_decimals: 0
+          pre_commands:
+            - "ATAR"
+            - "ATSP7"
+            - "ATSHFC0076"
+            - "ATCP17"
+            - "ATCRA17FE0076"
+            - "ATFCSH17FC0076"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: co2_value
+          mode: "22"
+          pid: "42DB"
+          formula: "b*100"
+          update_interval: "60s"
+          unit: ""
+          state_class: "measurement"
+          accuracy_decimals: 0
+          pre_commands:
+            - "ATAR"
+            - "ATSP6"
+            - "ATSH746"
+            - "ATFCSH746"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+            - "ATCRA7B0"
+        - key: outside_temperature
+          mode: "22"
+          pid: "2609"
+          formula: "(a*0.5)-50"
+          update_interval: "30s"
+          unit: "°C"
+          device_class: "temperature"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATSP6"
+            - "ATSH746"
+            - "ATFCSH746"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+            - "ATCRA7B0"
+        - key: cabin_temperature
+          mode: "22"
+          pid: "2613"
+          formula: "((a*256+b)/5)-40"
+          update_interval: "30s"
+          unit: "°C"
+          device_class: "temperature"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATSP6"
+            - "ATSH746"
+            - "ATFCSH746"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+            - "ATCRA7B0"
+        - key: hv_battery_capacity_max
+          mode: "22"
+          pid: "2AB2"
+          formula: "((a*256+b)*50)/1000"
+          update_interval: "3600s"
+          unit: "kWh"
+          device_class: "energy"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: displayed_range
+          mode: "22"
+          pid: "2AB6"
+          formula: "(a*256+b)"
+          update_interval: "30s"
+          unit: "mi"
+          state_class: "measurement"
+          accuracy_decimals: 0
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: range_reserve_estimated
+          mode: "22"
+          pid: "2AB4"
+          formula: "(b*256+c)"
+          update_interval: "30s"
+          unit: "km"
+          state_class: "measurement"
+          accuracy_decimals: 0
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: range_reserve_can
+          mode: "22"
+          pid: "2AB5"
+          formula: "(c*256+d)"
+          update_interval: "30s"
+          unit: "km"
+          state_class: "measurement"
+          accuracy_decimals: 0
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: average_battery_consumption
+          mode: "22"
+          pid: "2AB4"
+          formula: "j"
+          update_interval: "30s"
+          unit: "A"
+          state_class: "measurement"
+          accuracy_decimals: 0
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: hv_battery_energy
+          mode: "22"
+          pid: "2AB8"
+          formula: "((b*256+c)*25)/1000"
+          update_interval: "30s"
+          unit: "kWh"
+          device_class: "energy"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: electric_motor_power_limitation
+          mode: "22"
+          pid: "15D1"
+          formula: "(b*256+c)*50"
+          update_interval: "10s"
+          unit: "W"
+          device_class: "power"
+          state_class: "measurement"
+          accuracy_decimals: 0
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: electric_motor_non_vehicle_power_limitation
+          mode: "22"
+          pid: "15D1"
+          formula: "d*50"
+          update_interval: "10s"
+          unit: "W"
+          device_class: "power"
+          state_class: "measurement"
+          accuracy_decimals: 0
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: non_vehicle_energy_requirement
+          mode: "22"
+          pid: "15D1"
+          formula: "(e*50)/1000"
+          update_interval: "10s"
+          unit: "kWh"
+          device_class: "energy"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: electric_motor_battery_energy
+          mode: "22"
+          pid: "15D1"
+          formula: "((f*256+g)*50)/1000"
+          update_interval: "10s"
+          unit: "kWh"
+          device_class: "energy"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: start_stop_battery_resistance
+          mode: "22"
+          pid: "2A0E"
+          formula: "(a*2)/10"
+          update_interval: "60s"
+          unit: "mΩ"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: dcdc_low_voltage
+          mode: "22"
+          pid: "2A53"
+          formula: "a/10"
+          update_interval: "10s"
+          unit: "V"
+          device_class: "voltage"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: dcdc_current
+          mode: "22"
+          pid: "2A53"
+          formula: "(b*256+c)-511"
+          update_interval: "10s"
+          unit: "A"
+          device_class: "current"
+          state_class: "measurement"
+          accuracy_decimals: 0
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: dcdc_reserved_current
+          mode: "22"
+          pid: "2A53"
+          formula: "(d*256+e)-511"
+          update_interval: "60s"
+          unit: "A"
+          device_class: "current"
+          state_class: "measurement"
+          accuracy_decimals: 0
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: average_consumption_category_0
+          mode: "22"
+          pid: "2AB7"
+          formula: "(a*256+b)/10"
+          update_interval: "60s"
+          unit: "kWh"
+          device_class: "energy"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: average_consumption_category_1
+          mode: "22"
+          pid: "2AB7"
+          formula: "(c*256+d)/10"
+          update_interval: "60s"
+          unit: "kWh"
+          device_class: "energy"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: average_consumption_category_2
+          mode: "22"
+          pid: "2AB7"
+          formula: "(e*256+f)/10"
+          update_interval: "60s"
+          unit: "kWh"
+          device_class: "energy"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: average_consumption_category_3
+          mode: "22"
+          pid: "2AB7"
+          formula: "(g*256+h)/10"
+          update_interval: "60s"
+          unit: "kWh"
+          device_class: "energy"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: average_consumption_category_4
+          mode: "22"
+          pid: "2AB7"
+          formula: "(i*256+j)/10"
+          update_interval: "60s"
+          unit: "kWh"
+          device_class: "energy"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: average_consumption_category_5
+          mode: "22"
+          pid: "2AB7"
+          formula: "(k*256+l)/10"
+          update_interval: "60s"
+          unit: "kWh"
+          device_class: "energy"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: average_consumption_category_6
+          mode: "22"
+          pid: "2AB7"
+          formula: "(m*256+n)/10"
+          update_interval: "60s"
+          unit: "kWh"
+          device_class: "energy"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: battery_12v_voltage
+          mode: "22"
+          pid: "2AF7"
+          formula: "((a*256+b)/1000)+4"
+          update_interval: "30s"
+          unit: "V"
+          device_class: "voltage"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: battery_12v_soc
+          mode: "22"
+          pid: "2AF7"
+          formula: "h"
+          update_interval: "60s"
+          unit: "%"
+          device_class: "battery"
+          state_class: "measurement"
+          accuracy_decimals: 0
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: battery_12v_temperature
+          mode: "22"
+          pid: "2AF7"
+          formula: "i-40"
+          update_interval: "60s"
+          unit: "°C"
+          device_class: "temperature"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: battery_12v_sensor_temperature
+          mode: "22"
+          pid: "2AF7"
+          formula: "j-40"
+          update_interval: "60s"
+          unit: "°C"
+          device_class: "temperature"
+          state_class: "measurement"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: battery_12v_total_charge
+          mode: "22"
+          pid: "2AF7"
+          formula: "(m*16777216+n*65536+o*256+p)/10"
+          update_interval: "300s"
+          unit: "Ah"
+          state_class: "total_increasing"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: battery_12v_total_discharge
+          mode: "22"
+          pid: "2AF7"
+          formula: "(q*16777216+r*65536+s*256+t)/10"
+          update_interval: "300s"
+          unit: "Ah"
+          state_class: "total_increasing"
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: battery_12v_aging_capacity
+          mode: "22"
+          pid: "2AF7"
+          formula: "u"
+          update_interval: "3600s"
+          unit: "%"
+          state_class: "measurement"
+          accuracy_decimals: 0
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: battery_12v_aging_power
+          mode: "22"
+          pid: "2AF7"
+          formula: "v"
+          update_interval: "3600s"
+          unit: "%"
+          state_class: "measurement"
+          accuracy_decimals: 0
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+        - key: battery_12v_adapted_capacity
+          mode: "22"
+          pid: "2AF7"
+          formula: "w"
+          update_interval: "3600s"
+          unit: "Ah"
+          state_class: "measurement"
+          accuracy_decimals: 0
+          pre_commands:
+            - "ATAR"
+            - "ATCP18"
+            - "ATSHDB33F1"
+            - "ATSH710"
+            - "ATSP6"
+            - "ATFCSH710"
+            - "ATCRA77A"
+            - "ATFCSD300000"
+            - "ATFCSM1"
+
+  - id: fiat_500e_2020
+    name: "Fiat 500e (2020)"
+    description: "Fiat 500e (2020): UDS-PIDs aus MrPoofy/500ePIDsCals.js; SOC-Wert ist der rohe BMS-Wert und nicht als Display-SOC kalibriert"
+    device:
+      id: fiat_500e
+      name: "Fiat 500e"
+      source: obd
+      vehicle_id: fiat_500e
+      obd:
+        init_commands:
+          - "ATZ"
+          - "ATD"
+          - "ATE0"
+          - "ATS0"
+          - "ATAL"
+          - "ATH0"
+          - "ATSP7"
+          - "ATCP18"
+      sensors:
+        - key: hv_battery_soh
+          mode: "22"
+          pid: "A029"
+          formula: "((f*256+g)/(d*256+e))*100"
+          update_interval: "3600s"
+          unit: "%"
+          device_class: battery
+          state_class: measurement
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATSHDA44F1"
+            - "ATFCSH18DA44F1"
+            - "ATCRA18DAF144"
+
+        - key: hv_battery_soc_raw
+          mode: "22"
+          pid: "A010"
+          formula: "(c/255)*100"
+          update_interval: "10s"
+          unit: "%"
+          device_class: battery
+          state_class: measurement
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATSHDA44F1"
+            - "ATFCSH18DA44F1"
+            - "ATCRA18DAF144"
+
+        - key: hv_battery_voltage_max
+          mode: "22"
+          pid: "A009"
+          formula: "(c*256+d)/1000"
+          update_interval: "30s"
+          unit: "V"
+          device_class: voltage
+          state_class: measurement
+          accuracy_decimals: 3
+          pre_commands:
+            - "ATSHDA44F1"
+            - "ATFCSH18DA44F1"
+            - "ATCRA18DAF144"
+
+        - key: hv_battery_voltage_min
+          mode: "22"
+          pid: "A009"
+          formula: "(e*256+f)/1000"
+          update_interval: "30s"
+          unit: "V"
+          device_class: voltage
+          state_class: measurement
+          accuracy_decimals: 3
+          pre_commands:
+            - "ATSHDA44F1"
+            - "ATFCSH18DA44F1"
+            - "ATCRA18DAF144"
+
+        - key: hv_battery_cell_voltage_delta
+          mode: "22"
+          pid: "A009"
+          formula: "((c*256+d)-(e*256+f))/1000"
+          update_interval: "30s"
+          unit: "V"
+          device_class: voltage
+          state_class: measurement
+          accuracy_decimals: 3
+          pre_commands:
+            - "ATSHDA44F1"
+            - "ATFCSH18DA44F1"
+            - "ATCRA18DAF144"
+
+        - key: hv_battery_temperature
+          mode: "22"
+          pid: "A009"
+          formula: "j-256*floor(j/128)"
+          update_interval: "30s"
+          unit: "°C"
+          device_class: temperature
+          state_class: measurement
+          accuracy_decimals: 0
+          pre_commands:
+            - "ATSHDA44F1"
+            - "ATFCSH18DA44F1"
+            - "ATCRA18DAF144"
+
+        - key: hv_battery_voltage
+          mode: "22"
+          pid: "A011"
+          formula: "(e*256+f)/10"
+          update_interval: "10s"
+          unit: "V"
+          device_class: voltage
+          state_class: measurement
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATSHDA44F1"
+            - "ATFCSH18DA44F1"
+            - "ATCRA18DAF144"
+
+        - key: hv_battery_current
+          mode: "22"
+          pid: "A00A"
+          formula: "((a*256+b)-32768)/20"
+          update_interval: "10s"
+          unit: "A"
+          device_class: current
+          state_class: measurement
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATSHDA44F1"
+            - "ATFCSH18DA44F1"
+            - "ATCRA18DAF144"
+
+        - key: obd_voltage
+          mode: "22"
+          pid: "A042"
+          formula: "(a*256+b)/1000"
+          update_interval: "30s"
+          unit: "V"
+          device_class: voltage
+          state_class: measurement
+          accuracy_decimals: 2
+          pre_commands:
+            - "ATSHDA44F1"
+            - "ATFCSH18DA44F1"
+            - "ATCRA18DAF144"
+
+        - key: ambient_temperature
+          mode: "22"
+          pid: "013C"
+          formula: "(a/2)-40"
+          update_interval: "30s"
+          unit: "°C"
+          device_class: temperature
+          state_class: measurement
+          accuracy_decimals: 1
+          pre_commands:
+            - "ATSHDA40F1"
+            - "ATFCSH18DA40F1"
+            - "ATCRA18DAF140"
