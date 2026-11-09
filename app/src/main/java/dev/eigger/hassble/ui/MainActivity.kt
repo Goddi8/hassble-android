@@ -180,7 +180,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        VehicleCompanionManager.ensureObservingAssociations(this)
         BluetoothAdapterNameGuard.resetToInitial(this)
         handleDeepLink(intent)
         setContent {
@@ -450,8 +449,11 @@ private fun HomeScreen() {
     var showExportDialog by remember { mutableStateOf(false) }
     var missingPermCount by remember { mutableStateOf(0) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(vehicleAutoGateway) {
         if (vehicleAutoGateway) VehicleCompanionManager.ensureObservingAssociations(context)
+    }
+
+    LaunchedEffect(Unit) {
         companionAddresses = VehicleCompanionManager.associatedAddresses(context)
         draftDevices = repository.loadDraftDevices()
     }
@@ -720,7 +722,11 @@ private fun HomeScreen() {
                     onVehicleAutoGatewayChange = { enabled ->
                         scope.launch {
                             repository.saveVehicleAutoGateway(enabled)
-                            if (enabled) VehicleCompanionManager.ensureObservingAssociations(context)
+                            if (enabled) {
+                                VehicleCompanionManager.ensureObservingAssociations(context)
+                            } else {
+                                VehicleCompanionManager.stopObservingAssociations(context)
+                            }
                         }
                     },
                     onAssociateVehicle = { mac ->
@@ -1467,7 +1473,7 @@ private fun GatewayTabContent(
                     Text("Automatische Gateway-Steuerung", fontSize = 13.sp, color = Color.White)
                     Switch(
                         checked = vehicleAutoGateway,
-                        enabled = associatedVehicleMacs.isNotEmpty(),
+                        enabled = associatedVehicleMacs.isNotEmpty() || vehicleAutoGateway,
                         onCheckedChange = onVehicleAutoGatewayChange,
                         colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = MaterialTheme.colorScheme.primary),
                     )

@@ -54,6 +54,15 @@ object VehicleCompanionManager {
         associatedAddresses(context).forEach { registerPresenceObservation(context, it) }
     }
 
+    @Suppress("DEPRECATION")
+    fun stopObservingAssociations(context: Context) {
+        if (!isSupported(context)) return
+        associatedAddresses(context).forEach { address ->
+            runCatching { manager(context).stopObservingDevicePresence(address) }
+                .onFailure { LiveEventLogger.log(LogType.LINK, "Companion observation stop failed for $address: ${it.message}") }
+        }
+    }
+
     fun autoGatewayEnabled(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_AUTO_GATEWAY, false)
 

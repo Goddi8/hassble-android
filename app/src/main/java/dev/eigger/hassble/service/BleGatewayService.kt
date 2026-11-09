@@ -260,7 +260,7 @@ class BleGatewayService : Service() {
         if (intent.action == ACTION_START_FOR_VEHICLE) {
             vehicleAutoStopJob?.cancel()
             vehicleAutoStopJob = null
-            if (ws == null) restoreFromSavedSettings(startId) else reloadConfig()
+            if (ws == null) restoreFromSavedSettings(startId)
             return START_STICKY
         }
 

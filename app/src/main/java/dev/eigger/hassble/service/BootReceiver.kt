@@ -27,6 +27,7 @@ class BootReceiver : BroadcastReceiver() {
                     withTimeoutOrNull(BOOT_RECEIVER_TIMEOUT_MS) {
                         val vehicleAutoGateway = repository.vehicleAutoGateway.first()
                         if (vehicleAutoGateway) {
+                            VehicleCompanionManager.setAutoGatewayEnabled(context, true)
                             VehicleCompanionManager.clearPresentAddresses(context)
                             VehicleCompanionManager.ensureObservingAssociations(context)
                             Log.d(TAG, "Vehicle automation enabled; waiting for companion Bluetooth events")
