@@ -3127,7 +3127,7 @@ private fun LogsTabContent(
                                     }
                                 }
                             },
-                            enabled = hasDebugFile,
+                            enabled = debugFileLogging || hasDebugFile,
                         )
                     }
                 }
@@ -3588,6 +3588,36 @@ private fun shareLogs(context: Context, logs: List<LogEntry>) {
         context.startActivity(chooser)
     } catch (e: Exception) {
         Toast.makeText(context, context.getString(R.string.logs_share_failed, e.message), Toast.LENGTH_LONG).show()
+    }
+}
+
+private fun shareDebugLogFile(context: Context, file: File) {
+    try {
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file,
+        )
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, file.name)
+            clipData = ClipData.newUri(context.contentResolver, file.name, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val chooser = Intent.createChooser(
+            sendIntent,
+            context.getString(R.string.logs_share_debug_file),
+        ).apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(chooser)
+    } catch (e: Exception) {
+        Toast.makeText(
+            context,
+            context.getString(R.string.logs_share_failed, e.message.orEmpty()),
+            Toast.LENGTH_LONG,
+        ).show()
     }
 }
 
