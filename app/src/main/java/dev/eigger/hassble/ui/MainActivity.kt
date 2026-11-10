@@ -3108,6 +3108,11 @@ private fun LogsTabContent(
                             text = stringResource(R.string.logs_clear),
                             onClick = { showClearLogsConfirm = true },
                         )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start,
+                    ) {
                         HassLinkButton(
                             text = stringResource(R.string.logs_share_debug_file),
                             onClick = {
