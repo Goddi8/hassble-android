@@ -11,6 +11,11 @@ import kotlinx.coroutines.flow.StateFlow
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.io.File
+import java.io.FileOutputStream
+import java.nio.charset.StandardCharsets
+import java.time.LocalDateTime
+import java.util.concurrent.Executors
 
 enum class LogType {
     ADV,     // BLE Advertisement
@@ -34,8 +39,84 @@ object LiveEventLogger {
     @Volatile
     private var appContext: Context? = null
 
+    private val fileLogExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "HassBle-DebugLog").apply { isDaemon = true }
+    }
+
+    @Volatile
+    var isDebugFileLoggingEnabled: Boolean = false
+        private set
+
+    private val debugFileDateFormat =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS", Locale.ROOT)
+
+    private const val DEBUG_LOG_FILE = "hassble-debug.log"
+    private const val DEBUG_LOG_ROTATED_FILE = "hassble-debug.log.1"
+    private const val MAX_DEBUG_LOG_BYTES = 5L * 1024L * 1024L
+
     fun init(context: Context) {
-        appContext = context.applicationContext
+        val app = context.applicationContext
+        appContext = app
+        isDebugFileLoggingEnabled = app.getSharedPreferences("debug_logging", Context.MODE_PRIVATE)
+            .getBoolean("enabled", false)
+        if (isDebugFileLoggingEnabled) {
+            enqueueDebugLine("LINK", "Debug file logging resumed after app start")
+        }
+    }
+
+    fun setDebugFileLoggingEnabled(context: Context, enabled: Boolean) {
+        val app = context.applicationContext
+        app.getSharedPreferences("debug_logging", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("enabled", enabled)
+            .apply()
+
+        if (enabled) {
+            isDebugFileLoggingEnabled = true
+            enqueueDebugLine("LINK", "========== Debug file logging enabled ==========")
+        } else {
+            enqueueDebugLine("LINK", "========== Debug file logging disabled ==========")
+            isDebugFileLoggingEnabled = false
+        }
+    }
+
+    fun hasDebugLog(context: Context): Boolean =
+        File(context.filesDir, DEBUG_LOG_FILE).exists() ||
+            File(context.filesDir, DEBUG_LOG_ROTATED_FILE).exists()
+
+    /**
+     * Creates a shareable snapshot on the IO dispatcher. The single-thread executor
+     * first drains all queued log writes, so the exported file is complete and ordered.
+     */
+    fun copyDebugLogToCache(context: Context): File {
+        return fileLogExecutor.submit<File> {
+            val output = File(context.cacheDir, DEBUG_LOG_FILE)
+            FileOutputStream(output, false).use { stream ->
+                val rotated = File(context.filesDir, DEBUG_LOG_ROTATED_FILE)
+                val current = File(context.filesDir, DEBUG_LOG_FILE)
+                if (rotated.exists()) rotated.inputStream().use { it.copyTo(stream) }
+                if (current.exists()) current.inputStream().use { it.copyTo(stream) }
+            }
+            output
+        }.get()
+    }
+
+    private fun enqueueDebugLine(type: String, message: String) {
+        val context = appContext ?: return
+        val timestamp = LocalDateTime.now().format(debugFileDateFormat)
+        val line = "$timestamp [$type] $message\\n"
+        fileLogExecutor.execute {
+            runCatching {
+                val file = File(context.filesDir, DEBUG_LOG_FILE)
+                val bytes = line.toByteArray(StandardCharsets.UTF_8)
+                if (file.exists() && file.length() + bytes.size > MAX_DEBUG_LOG_BYTES) {
+                    val rotated = File(context.filesDir, DEBUG_LOG_ROTATED_FILE)
+                    if (rotated.exists()) rotated.delete()
+                    file.renameTo(rotated)
+                }
+                file.appendBytes(bytes)
+            }
+        }
     }
 
     fun logRes(type: LogType, @StringRes resId: Int, vararg formatArgs: Any?) {
@@ -105,6 +186,9 @@ object LiveEventLogger {
             }
         }
         _logFlow.tryEmit(entry)
+        if (isDebugFileLoggingEnabled) {
+            enqueueDebugLine(type.name, message)
+        }
     }
 
     fun clearLogs() {
