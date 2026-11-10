@@ -169,6 +169,9 @@
     <string name="notif_config_error">Config load failed</string>
     <string name="tab_logs">Logs</string>
     <string name="logs_title">Event logs</string>
+    <string name="logs_debug_file">Save diagnostic log to file</string>
+    <string name="logs_debug_file_hint">When enabled, logs are saved in the background and can be shared later.</string>
+    <string name="logs_share_debug_file">Share diagnostic log</string>
     <string name="logs_summary">%1$d / %2$d entries</string>
     <string name="logs_buffer_limit">Buffer</string>
     <string name="logs_include_adv">Advertisement logs</string>
