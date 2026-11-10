@@ -593,6 +593,7 @@ private fun HomeScreen() {
     var scanningDevice by remember { mutableStateOf<DeviceConfig?>(null) }
     var selectedTab by remember { mutableStateOf(0) }
     var logIncludeAdv by remember { mutableStateOf(false) }
+    var debugFileLogging by remember { mutableStateOf(LiveEventLogger.isDebugFileLoggingEnabled) }
     var sensorDeviceSearch by remember { mutableStateOf("") }
 
     LaunchedEffect(selectedTab) {
@@ -831,6 +832,11 @@ private fun HomeScreen() {
                     isRunning = isRunning,
                     logBufferLimit = logBufferLimit,
                     logIncludeAdv = logIncludeAdv,
+                    debugFileLogging = debugFileLogging,
+                    onDebugFileLoggingChange = { enabled ->
+                        LiveEventLogger.setDebugFileLoggingEnabled(context, enabled)
+                        debugFileLogging = enabled
+                    },
                     onLogBufferLimitChange = { limit ->
                         scope.launch { repository.saveLogBufferLimit(limit) }
                     },
@@ -2882,11 +2888,15 @@ private fun LogsTabContent(
     isRunning: Boolean,
     logBufferLimit: Int,
     logIncludeAdv: Boolean,
+    debugFileLogging: Boolean,
+    onDebugFileLoggingChange: (Boolean) -> Unit,
     onLogBufferLimitChange: (Int) -> Unit,
     onLogIncludeAdvChange: (Boolean) -> Unit,
     onFindMacInSensors: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val hasDebugFile = remember(debugFileLogging) { LiveEventLogger.hasDebugLog(context) }
     val logsList = remember {
         mutableStateListOf<LogEntry>().apply {
             addAll(LiveEventLogger.logs)
@@ -3027,6 +3037,34 @@ private fun LogsTabContent(
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.logs_debug_file),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                            )
+                            Text(
+                                text = stringResource(R.string.logs_debug_file_hint),
+                                fontSize = 10.sp,
+                                color = Color.Gray,
+                            )
+                        }
+                        Switch(
+                            checked = debugFileLogging,
+                            onCheckedChange = onDebugFileLoggingChange,
+                            modifier = Modifier.height(28.dp),
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                            ),
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(
@@ -3069,6 +3107,27 @@ private fun LogsTabContent(
                         HassLinkButton(
                             text = stringResource(R.string.logs_clear),
                             onClick = { showClearLogsConfirm = true },
+                        )
+                        HassLinkButton(
+                            text = stringResource(R.string.logs_share_debug_file),
+                            onClick = {
+                                scope.launch {
+                                    runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            LiveEventLogger.copyDebugLogToCache(context)
+                                        }
+                                    }.onSuccess { file ->
+                                        shareDebugLogFile(context, file)
+                                    }.onFailure { error ->
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.logs_share_failed, error.message.orEmpty()),
+                                            Toast.LENGTH_LONG,
+                                        ).show()
+                                    }
+                                }
+                            },
+                            enabled = hasDebugFile,
                         )
                     }
                 }
