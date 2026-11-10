@@ -16,7 +16,11 @@ object ObdResponseParser {
         }
         val bytes = extractPayloadBytes(response) ?: return null
         if (bytes.isEmpty()) return null
-        val payload = reassembleIsotp(bytes)
+        // Some ELM327 adapters return the transmitted command before the ECU response
+        // when command echo is enabled (e.g. 22 02 8C 62 02 8C 6D).
+        // Remove it only when the following positive response matches the request PID.
+        val withoutEcho = stripMatchingCommandEcho(bytes)
+        val payload = reassembleIsotp(withoutEcho)
         if (payload.isEmpty()) return null
         return payload.joinToString("") { "%02X".format(it) }
     }
@@ -102,6 +106,46 @@ object ObdResponseParser {
         val hex = if (framed.isNotEmpty()) framed.toString() else plain.toString()
         if (hex.length < 4 || hex.length % 2 != 0) return null
         return Decoder.hexToBytes(hex)
+    }
+
+    /**
+     * Remove an ELM327 command echo only when it is immediately followed by the
+     * corresponding positive response. Mode 22 uses a two-byte PID; standard OBD
+     * modes 01..0A use a one-byte PID.
+     */
+    private fun stripMatchingCommandEcho(bytes: ByteArray): ByteArray {
+        if (bytes.isEmpty()) return bytes
+
+        val service = bytes[0].toInt() and 0xFF
+        val echoLength: Int
+        val positiveResponse: Int
+        val pidLength: Int
+
+        when (service) {
+            0x22 -> {
+                echoLength = 3
+                positiveResponse = 0x62
+                pidLength = 2
+            }
+            in 0x01..0x0A -> {
+                echoLength = 2
+                positiveResponse = service + 0x40
+                pidLength = 1
+            }
+            else -> return bytes
+        }
+
+        val responseStart = echoLength
+        if (bytes.size < echoLength + 1 + pidLength) return bytes
+        if ((bytes[responseStart].toInt() and 0xFF) != positiveResponse) return bytes
+
+        for (i in 0 until pidLength) {
+            val requestPid = bytes[1 + i].toInt() and 0xFF
+            val responsePid = bytes[responseStart + 1 + i].toInt() and 0xFF
+            if (requestPid != responsePid) return bytes
+        }
+
+        return bytes.copyOfRange(responseStart, bytes.size)
     }
 
     /**
