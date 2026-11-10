@@ -26,6 +26,24 @@ class ObdResponseParserTest {
     }
 
     @Test
+    fun `mode 22 command echo is removed before response parsing`() {
+        val hex = ObdResponseParser.normalizeElm327Response("22028C62028C6D\\r>")
+        assertEquals("62028C6D", hex)
+    }
+
+    @Test
+    fun `standard obd command echo is removed before response parsing`() {
+        val hex = ObdResponseParser.normalizeElm327Response("010C410C1AF8\\r>")
+        assertEquals("410C1AF8", hex)
+    }
+
+    @Test
+    fun `mismatched command echo is not stripped`() {
+        val hex = ObdResponseParser.normalizeElm327Response("22028C62028D6D\\r>")
+        assertEquals("22028C62028D6D", hex)
+    }
+
+    @Test
     fun `iso-tp single frame pci`() {
         val bytes = byteArrayOf(0x04, 0x41, 0x0C, 0x1A.toByte(), 0xF8.toByte())
         val payload = ObdResponseParser.reassembleIsotp(bytes)
