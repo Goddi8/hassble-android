@@ -162,6 +162,9 @@
     <string name="notif_config_error">설정 로드 실패</string>
     <string name="tab_logs">로그</string>
     <string name="logs_title">이벤트 로그</string>
+    <string name="logs_debug_file">진단 로그 파일 저장</string>
+    <string name="logs_debug_file_hint">활성화하면 앱이 백그라운드에서 로그를 저장합니다. 최근 로그를 공유할 수 있습니다.</string>
+    <string name="logs_share_debug_file">진단 로그 공유</string>
     <string name="logs_summary">항목 %1$d / %2$d</string>
     <string name="logs_buffer_limit">기록 줄 수</string>
     <string name="logs_include_adv">광고 로그</string>
