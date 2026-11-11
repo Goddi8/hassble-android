@@ -30,11 +30,13 @@ object CanMonitorParser {
                 tail = compact.substring(8)
             } else {
                 id = tokens.first().removePrefix("0X")
-                tail = tokens.drop(1).joinToString("")
+                tail = tokens.drop(1).joinToString(" ")
             }
             if (id.length !in 3..8 || id.any { !it.isDigit() && it !in 'A'..'F' }) continue
 
-            val hex = tail.filter { it.isDigit() || it in 'A'..'F' }
+            val tokensAfterId = tail.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+            val hex = tokensAfterId.joinToString("") { it }
+                .filter { it.isDigit() || it in 'A'..'F' }
             if (hex.length < 2 || hex.length % 2 != 0) continue
             val bytes = runCatching {
                 ByteArray(hex.length / 2) { i ->
@@ -42,8 +44,11 @@ object CanMonitorParser {
                 }
             }.getOrNull() ?: continue
 
-            // Bei ELM-Ausgabe ist das erste Byte nach der ID häufig DLC.
-            val payload = if (bytes.isNotEmpty() &&
+            // DLC kann von ELM als einzelnes Token ("5") oder als Byte ("05") erscheinen.
+            val dlc = tokensAfterId.firstOrNull()?.let { it.toIntOrNull(16) }
+            val payload = if (dlc != null && dlc in 0..8 && bytes.size == tokensAfterId.drop(1).joinToString("").length / 2 + 1) {
+                bytes.copyOfRange(1, bytes.size)
+            } else if (bytes.isNotEmpty() &&
                 (bytes[0].toInt() and 0xFF) in 0..8 &&
                 bytes.size == (bytes[0].toInt() and 0xFF) + 1
             ) bytes.copyOfRange(1, bytes.size) else bytes
