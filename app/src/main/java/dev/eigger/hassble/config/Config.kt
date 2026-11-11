@@ -95,6 +95,9 @@ data class ObdConfig(
     // 헤더를 바꾸는 센서가 남긴 상태를 되돌리는 용도. 비우면 종전대로 마지막 헤더가 유지된다.
     @SerialName("default_commands") val defaultCommands: List<String> = emptyList(),
     @SerialName("auto_connect") val autoConnect: Boolean = false,
+    /** Passive CAN monitor schedule. Used only when at least one sensor declares can_id. */
+    @SerialName("can_monitor_interval") val canMonitorInterval: String = "30s",
+    @SerialName("can_monitor_duration") val canMonitorDuration: String = "5s",
 )
 
 @Serializable
@@ -121,6 +124,10 @@ data class SensorConfig(
     val formula: String? = null,
     @SerialName("update_interval") val updateInterval: String = "60s",
     @SerialName("pre_commands") val preCommands: List<String> = emptyList(),
+    // Passive CAN monitor sensor (device source remains obd)
+    @SerialName("can_id") val canId: String? = null,
+    @SerialName("can_offset") val canOffset: Int = 0,
+    @SerialName("can_length") val canLength: Int = 8,
     // 필터
     val publish: PublishRule? = null,
 )
