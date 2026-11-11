@@ -15,6 +15,10 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -55,7 +59,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 
 private data class SettingsSnapshot(
     val boundMap: Map<String, String>,
@@ -363,11 +369,83 @@ class BleGatewayService : Service() {
         if (!pipelineStarting.compareAndSet(false, true)) return
         scope.launch {
             try {
+                val waitForVpn = HassSettingsRepository(applicationContext).waitForVpn.first()
+                if (waitForVpn) {
+                    awaitVpnNetwork()
+                }
                 val activeToken = maybeRefreshToken(haUrl, token, refreshToken)
                 setupWebSocket(haUrl, activeToken, refreshToken)
                 reloadConfig()
             } finally {
                 pipelineStarting.set(false)
+            }
+        }
+    }
+
+    /**
+     * Wait until Android reports an available VPN transport before opening the
+     * Home Assistant connection. This does not start or control the VPN itself.
+     */
+    private suspend fun awaitVpnNetwork() {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: throw IllegalStateException("ConnectivityManager unavailable")
+
+        fun isVpn(network: Network): Boolean =
+            cm.getNetworkCapabilities(network)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+
+        cm.allNetworks.firstOrNull(::isVpn)?.let {
+            LiveEventLogger.log(LogType.LINK, "VPN already available — continuing Home Assistant startup")
+            return
+        }
+
+        LiveEventLogger.log(LogType.LINK, "Waiting for VPN network before connecting to Home Assistant")
+        suspendCancellableCoroutine<Unit> { continuation ->
+            val completed = AtomicBoolean(false)
+            lateinit var callback: ConnectivityManager.NetworkCallback
+
+            fun finish(network: Network) {
+                if (!completed.compareAndSet(false, true)) return
+                runCatching { cm.unregisterNetworkCallback(callback) }
+                LiveEventLogger.log(LogType.LINK, "VPN network available — continuing Home Assistant startup")
+                if (continuation.isActive) continuation.resumeWith(Result.success(Unit))
+            }
+
+            callback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    if (isVpn(network)) finish(network)
+                }
+
+                override fun onCapabilitiesChanged(
+                    network: Network,
+                    networkCapabilities: NetworkCapabilities,
+                ) {
+                    if (networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                        finish(network)
+                    }
+                }
+            }
+
+            continuation.invokeOnCancellation {
+                if (completed.compareAndSet(false, true)) {
+                    runCatching { cm.unregisterNetworkCallback(callback) }
+                }
+            }
+
+            try {
+                // NOT_VPN is present by default in NetworkRequest.Builder; remove it
+                // so that the request can match a VPN transport.
+                val request = NetworkRequest.Builder()
+                    .addTransportType(NetworkCapabilities.TRANSPORT_VPN)
+                    .removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+                    .build()
+                cm.registerNetworkCallback(request, callback)
+
+                // Close the race between the initial allNetworks check and callback registration.
+                cm.allNetworks.firstOrNull(::isVpn)?.let(::finish)
+            } catch (e: Exception) {
+                if (completed.compareAndSet(false, true) && continuation.isActive) {
+                    continuation.resumeWith(Result.failure(e))
+                }
             }
         }
     }
