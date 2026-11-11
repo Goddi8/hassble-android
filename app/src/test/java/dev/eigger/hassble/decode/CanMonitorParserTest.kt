@@ -13,6 +13,13 @@ class CanMonitorParserTest {
     }
 
     @Test
+    fun `parses single digit dlc token`() {
+        val frame = CanMonitorParser.parse("0C10A040 5 79 A2 4B 48 40").single()
+        assertEquals("0C10A040", frame.canId)
+        assertArrayEquals(byteArrayOf(0x79, 0xA2.toByte(), 0x4B, 0x48, 0x40), frame.data)
+    }
+
+    @Test
     fun `parses compact frame`() {
         val frame = CanMonitorParser.parse("0C10A0400579A24B4840").single()
         assertEquals("0C10A040", frame.canId)
