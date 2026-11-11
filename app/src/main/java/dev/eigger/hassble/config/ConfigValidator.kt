@@ -181,15 +181,36 @@ object ConfigValidator {
                 }
             }
 
-            // OBD 센서는 pid가 있어야 폴링 가능
-            if (device.source == Source.obd && s.pid == null && s.preset == null)
+            val isPassiveCan = device.source == Source.obd && s.canId != null
+            if (isPassiveCan) {
+                val canId = s.canId!!.removePrefix("0x").removePrefix("0X")
+                if (canId.length !in 3..8 || canId.any { !it.isDigit() && it.uppercaseChar() !in 'A'..'F' })
+                    issues += ValidationIssue(ValidationLevel.ERROR, id, key,
+                        "can_id must be a 3–8 digit hexadecimal CAN identifier",
+                        sensorPath(id, key, "can_id"))
+                if (s.canOffset < 0 || s.canLength !in 1..8 || s.canOffset + s.canLength > 8)
+                    issues += ValidationIssue(ValidationLevel.ERROR, id, key,
+                        "can_offset/can_length must select 1–8 bytes within the CAN payload",
+                        sensorPath(id, key, "can_length"))
+                if (s.formula == null && s.decode == null)
+                    issues += ValidationIssue(ValidationLevel.ERROR, id, key,
+                        "passive CAN sensor requires 'formula' or 'decode'",
+                        sensorPath(id, key, "formula"))
+                if (s.pid != null || s.preset != null)
+                    issues += ValidationIssue(ValidationLevel.ERROR, id, key,
+                        "passive CAN sensor cannot also define pid or preset",
+                        sensorPath(id, key, "can_id"))
+            }
+
+            // OBD polling sensors need pid/preset; passive CAN sensors are frame-driven.
+            if (device.source == Source.obd && !isPassiveCan && s.pid == null && s.preset == null)
                 issues += ValidationIssue(ValidationLevel.ERROR, id, key,
                     "OBD sensor requires 'pid' or 'preset' — sensor will be skipped",
                     sensorPath(id, key, "preset"))
 
             // OBD 센서는 formula(preset 포함) 또는 decode 중 하나로 값을 뽑는다.
             // preset은 설정 로딩 시 이미 formula로 펼쳐진 뒤 검증된다.
-            if (device.source == Source.obd && s.pid != null && s.formula == null && s.decode == null)
+            if (device.source == Source.obd && !isPassiveCan && s.pid != null && s.formula == null && s.decode == null)
                 issues += ValidationIssue(ValidationLevel.WARNING, id, key,
                     "OBD sensor has neither 'formula' nor 'decode' — sensor will never produce a value",
                     sensorPath(id, key, "formula"))
@@ -199,6 +220,24 @@ object ConfigValidator {
                 issues += ValidationIssue(ValidationLevel.WARNING, id, key,
                     "no decode config — sensor will never produce a value",
                     sensorPath(id, key, "decode"))
+        }
+
+        if (device.source == Source.obd && device.sensors.any { it.canId != null }) {
+            if (!isValidDuration(device.obd?.canMonitorInterval ?: "30s") ||
+                parseDurationMs(device.obd?.canMonitorInterval ?: "30s", 0L) <= 0L)
+                issues += ValidationIssue(ValidationLevel.ERROR, device.id, null,
+                    "can_monitor_interval must be a positive duration (e.g. 30s)",
+                    devicePath(device.id, "obd.can_monitor_interval"))
+            if (!isValidDuration(device.obd?.canMonitorDuration ?: "5s") ||
+                parseDurationMs(device.obd?.canMonitorDuration ?: "5s", 0L) <= 0L)
+                issues += ValidationIssue(ValidationLevel.ERROR, device.id, null,
+                    "can_monitor_duration must be a positive duration (e.g. 5s)",
+                    devicePath(device.id, "obd.can_monitor_duration"))
+            if (parseDurationMs(device.obd?.canMonitorDuration ?: "5s", 0L) >
+                parseDurationMs(device.obd?.canMonitorInterval ?: "30s", 0L))
+                issues += ValidationIssue(ValidationLevel.ERROR, device.id, null,
+                    "can_monitor_duration cannot exceed can_monitor_interval",
+                    devicePath(device.id, "obd.can_monitor_duration"))
         }
 
         // ── 예약 키 / presence_timeout ─────────────────────────────────────────────
