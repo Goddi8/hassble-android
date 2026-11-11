@@ -411,8 +411,10 @@ class BleGatewayService : Service() {
             }
 
             callback = object : ConnectivityManager.NetworkCallback() {
+                // The NetworkRequest itself only matches VPN transports. Capabilities
+                // are also checked after Android reports the network's full properties.
                 override fun onAvailable(network: Network) {
-                    if (isVpn(network)) finish(network)
+                    finish(network)
                 }
 
                 override fun onCapabilitiesChanged(
@@ -439,10 +441,16 @@ class BleGatewayService : Service() {
                     .removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
                     .build()
                 cm.registerNetworkCallback(request, callback)
+                if (completed.get()) {
+                    // Cancellation can race with callback registration.
+                    runCatching { cm.unregisterNetworkCallback(callback) }
+                    return@suspendCancellableCoroutine
+                }
 
                 // Close the race between the initial allNetworks check and callback registration.
                 cm.allNetworks.firstOrNull(::isVpn)?.let(::finish)
             } catch (e: Exception) {
+                runCatching { cm.unregisterNetworkCallback(callback) }
                 if (completed.compareAndSet(false, true) && continuation.isActive) {
                     continuation.resumeWith(Result.failure(e))
                 }
