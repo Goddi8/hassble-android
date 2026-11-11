@@ -834,33 +834,7 @@ class NordicElm327Source(
                 rxChar.getNotifications().collect { bytes ->
                     val chunk = String(bytes.value, Charsets.US_ASCII)
                     if (monitorActive.get()) {
-                        val lines = synchronized(monitorBuffer) {
-                            monitorBuffer.append(chunk)
-                            val complete = mutableListOf<String>()
-                            var boundary = monitorBuffer.indexOf("\r")
-                            while (boundary >= 0) {
-                                val line = monitorBuffer.substring(0, boundary).trim()
-                                monitorBuffer.delete(0, boundary + 1)
-                                if (line.isNotEmpty()) complete += line
-                                if (monitorBuffer.startsWith("\n")) monitorBuffer.deleteCharAt(0)
-                                boundary = monitorBuffer.indexOf("\r")
-                            }
-                            boundary = monitorBuffer.indexOf("\n")
-                            while (boundary >= 0) {
-                                val line = monitorBuffer.substring(0, boundary).trim()
-                                monitorBuffer.delete(0, boundary + 1)
-                                if (line.isNotEmpty()) complete += line
-                                boundary = monitorBuffer.indexOf("\n")
-                            }
-                            complete
-                        }
-                        for (frame in lines.flatMap { dev.eigger.hassble.decode.CanMonitorParser.parse(it) }) {
-                            collector.emitDownstream(
-                                RawReading(deviceId = device.id, source = "can_passive",
-                                    rawHex = frame.data.joinToString("") { "%02X".format(it) },
-                                    canId = frame.canId),
-                            )
-                        }
+                        synchronized(monitorBuffer) { monitorBuffer.append(chunk) }
                     } else {
                         val responses = synchronized(responseBuffer) {
                             responseBuffer.append(chunk)
@@ -983,10 +957,10 @@ class NordicElm327Source(
                             sendCommand(device.id, txChar, "ATH1")
                             synchronized(monitorBuffer) { monitorBuffer.setLength(0) }
                             monitorActive.set(true)
-                            txChar.write(DataByteArray("ATMA\\r".toByteArray(Charsets.US_ASCII)), BleWriteType.NO_RESPONSE)
+                            txChar.write(DataByteArray("ATMA\r".toByteArray(Charsets.US_ASCII)), BleWriteType.NO_RESPONSE)
                             delay(canDurationMs)
                         } finally {
-                            txChar.write(DataByteArray("\\r".toByteArray(Charsets.US_ASCII)), BleWriteType.NO_RESPONSE)
+                            txChar.write(DataByteArray("\r".toByteArray(Charsets.US_ASCII)), BleWriteType.NO_RESPONSE)
                             delay(250L)
                             monitorActive.set(false)
                             val tail = synchronized(monitorBuffer) {
@@ -1031,7 +1005,9 @@ class NordicElm327Source(
                             // 깨어나면(60s 주기 센서라도 초당 100번) 드라이브 내내 CPU가
                             // 딥슬립에 못 들어가 배터리를 크게 갉아먹는다. nextPollAtMs는
                             // 이 루프 밖에서 바뀌지 않으므로 안전하게 최솟값까지 잘 수 있다.
-                            delay(computeIdleWaitMs(targets.map { it.nextPollAtMs }, now))
+                            val wakeAt = if (targets.isEmpty()) nextCanMonitorAtMs
+                                else minOf(targets.minOf { it.nextPollAtMs }, nextCanMonitorAtMs.takeIf { canSensors.isNotEmpty() } ?: Long.MAX_VALUE)
+                            delay((wakeAt - now).coerceIn(POLL_LOOP_MS, MAX_IDLE_WAIT_MS))
                         }
                     } else {
                         delay(POLL_LOOP_MS)
