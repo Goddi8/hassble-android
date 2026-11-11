@@ -8,7 +8,7 @@ object HassBleDefaults {
         "https://raw.githubusercontent.com/eigger/hassble-config/main/$CONFIG_FILE"
 
     /** 앱 자체의 GitHub 저장소(config 저장소와 다르다). 릴리스 확인에 쓴다. */
-    const val APP_REPO = "eigger/hassble-android"
+    const val APP_REPO = "Goddi8/hassble-android"
 
     const val DEFAULT_LOG_BUFFER_LIMIT = 500
     val LOG_BUFFER_LIMIT_OPTIONS = listOf(100, 500, 1000)
