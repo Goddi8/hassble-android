@@ -20,6 +20,8 @@ data class RawReading(
     val serviceDataHex: String? = null,
     val fullScanHex: String? = null,
     val isConnectable: Boolean? = null,
+    /** CAN arbitration ID for passive monitor frames; rawHex contains only payload bytes. */
+    val canId: String? = null,
 )
 
 /** 경로 A: 광고 passive scan. match를 ScanFilter로 변환. */
