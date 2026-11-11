@@ -857,7 +857,7 @@ class BleRuntime(
                 if (r.source == "can_passive") {
                     val canId = r.canId?.let { dev.eigger.hassble.decode.CanMonitorParser.normalizeCanId(it) } ?: return
                     val sensors = d.sensors.filter { s ->
-                        s.key in enabledKeysForDevice(d.id) &&
+                        isEnabled(d.id, s.key) &&
                             s.canId?.let { dev.eigger.hassble.decode.CanMonitorParser.normalizeCanId(it) } == canId
                     }
                     for (s in sensors) {
@@ -872,7 +872,7 @@ class BleRuntime(
                         if (value != null) emit(d, d.id, s, value, out)
                     }
                     if (sensors.isNotEmpty()) onLinkDataReceived(d.id, System.currentTimeMillis())
-                    if (out.isNotEmpty()) publishSensorValues(out)
+                    if (out.isNotEmpty()) ws.sendStates(out)
                     return
                 }
                 val (mode, pid, data) = Decoder.parseObdResponse(r.rawHex) ?: return
