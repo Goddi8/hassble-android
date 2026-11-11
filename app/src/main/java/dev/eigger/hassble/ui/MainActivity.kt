@@ -3718,7 +3718,7 @@ private fun GitConfigSection(
                 value = repoInput,
                 onValueChange = onRepoChange,
                 label = { Text(stringResource(R.string.git_repo_label)) },
-                placeholder = { Text("eigger/hassble-config", color = Color.Gray, fontSize = 13.sp) },
+                placeholder = { Text("Goddi8/hassble-config", color = Color.Gray, fontSize = 13.sp) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
