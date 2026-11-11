@@ -854,6 +854,27 @@ class BleRuntime(
                 }
             }
             Source.obd -> {
+                if (r.source == "can_passive") {
+                    val canId = r.canId?.let { dev.eigger.hassble.decode.CanMonitorParser.normalizeCanId(it) } ?: return
+                    val sensors = d.sensors.filter { s ->
+                        s.key in enabledKeysForDevice(d.id) &&
+                            s.canId?.let { dev.eigger.hassble.decode.CanMonitorParser.normalizeCanId(it) } == canId
+                    }
+                    for (s in sensors) {
+                        val end = s.canOffset + s.canLength
+                        if (s.canOffset < 0 || s.canLength <= 0 || end > r.rawHex.length / 2) continue
+                        val bytes = Decoder.hexToBytes(r.rawHex) ?: continue
+                        val slice = bytes.copyOfRange(s.canOffset, end)
+                        val value = runCatching {
+                            if (s.decode != null) Decoder.decodeStructured(slice, s.decode)
+                            else s.formula?.let { Decoder.evalFormula(it, slice) }
+                        }.getOrNull()
+                        if (value != null) emit(d, d.id, s, value, out)
+                    }
+                    if (sensors.isNotEmpty()) onLinkDataReceived(d.id, System.currentTimeMillis())
+                    if (out.isNotEmpty()) publishSensorValues(out)
+                    return
+                }
                 val (mode, pid, data) = Decoder.parseObdResponse(r.rawHex) ?: return
                 val sensors = obdIndex[d.id]?.get(mode to pid) ?: return
                 var matched = false
