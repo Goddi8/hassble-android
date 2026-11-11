@@ -157,7 +157,6 @@ import dev.eigger.hassble.net.ConnectionIssue
 import dev.eigger.hassble.net.ConnectionState
 import dev.eigger.hassble.net.GitHubHelper
 import dev.eigger.hassble.net.HaConnectionTester
-import dev.eigger.hassble.net.UpdateChecker
 import dev.eigger.hassble.service.BleGatewayService
 import dev.eigger.hassble.service.VehicleCompanionManager
 import dev.eigger.hassble.service.CrashReporter
@@ -435,11 +434,6 @@ private fun HomeScreen() {
             LiveEventLogger.logRes(LogType.LINK, R.string.log_previous_crash, report)
         }
     }
-    // 새 릴리스가 있으면 버전 표기 옆에 배지로 알린다. 실패하면 조용히 아무것도 띄우지 않는다.
-    var availableUpdate by remember { mutableStateOf<UpdateChecker.Release?>(null) }
-    LaunchedEffect(Unit) {
-        availableUpdate = UpdateChecker.updateAvailable(UpdateChecker.latestRelease(repository))
-    }
     var usingCachedConfig by remember { mutableStateOf(false) }
     var showOnboarding by remember { mutableStateOf(false) }
     var showTemplateDialog by remember { mutableStateOf(false) }
@@ -635,18 +629,6 @@ private fun HomeScreen() {
                     Text(text = stringResource(R.string.app_name), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(text = "v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall, color = Color.Gray, modifier = Modifier.padding(bottom = 4.dp))
-                    availableUpdate?.let { release ->
-                        Spacer(modifier = Modifier.width(6.dp))
-                        UpdateBadge(
-                            version = release.version,
-                            onClick = {
-                                runCatching {
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(release.pageUrl)))
-                                }
-                            },
-                            modifier = Modifier.padding(bottom = 3.dp),
-                        )
-                    }
                 }
                 Text(text = stringResource(R.string.app_sub_title), style = MaterialTheme.typography.bodySmall, color = Color.Gray)
             }
@@ -3718,7 +3700,7 @@ private fun GitConfigSection(
                 value = repoInput,
                 onValueChange = onRepoChange,
                 label = { Text(stringResource(R.string.git_repo_label)) },
-                placeholder = { Text("eigger/hassble-config", color = Color.Gray, fontSize = 13.sp) },
+                placeholder = { Text("Goddi8/hassble-config", color = Color.Gray, fontSize = 13.sp) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
