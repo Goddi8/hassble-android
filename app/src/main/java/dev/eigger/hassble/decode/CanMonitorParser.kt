@@ -17,12 +17,23 @@ object CanMonitorParser {
     fun parse(text: String): List<Frame> {
         val frames = mutableListOf<Frame>()
         for (line in text.split('\r', '\n', '>')) {
-            val tokens = line.trim().uppercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
-            if (tokens.size < 2) continue
-            val id = tokens.first().removePrefix("0X")
+            val normalizedLine = line.trim().uppercase()
+            if (normalizedLine.isEmpty()) continue
+            val tokens = normalizedLine.split(Regex("\\s+")).filter { it.isNotEmpty() }
+            val id: String
+            val tail: String
+            if (tokens.size == 1) {
+                val compact = tokens[0].removePrefix("0X")
+                // Compact monitor output is unambiguous for extended (29-bit) IDs.
+                if (compact.length <= 10 || compact.length % 2 != 0) continue
+                id = compact.substring(0, 8)
+                tail = compact.substring(8)
+            } else {
+                id = tokens.first().removePrefix("0X")
+                tail = tokens.drop(1).joinToString("")
+            }
             if (id.length !in 3..8 || id.any { !it.isDigit() && it !in 'A'..'F' }) continue
 
-            val tail = tokens.drop(1).joinToString("")
             val hex = tail.filter { it.isDigit() || it in 'A'..'F' }
             if (hex.length < 2 || hex.length % 2 != 0) continue
             val bytes = runCatching {
