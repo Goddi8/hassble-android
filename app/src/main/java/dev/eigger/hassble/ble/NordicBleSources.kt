@@ -837,12 +837,20 @@ class NordicElm327Source(
                         val lines = synchronized(monitorBuffer) {
                             monitorBuffer.append(chunk)
                             val complete = mutableListOf<String>()
-                            var newline = monitorBuffer.indexOf("\\n")
-                            while (newline >= 0) {
-                                val line = monitorBuffer.substring(0, newline).trim()
-                                monitorBuffer.delete(0, newline + 1)
+                            var boundary = monitorBuffer.indexOf("\r")
+                            while (boundary >= 0) {
+                                val line = monitorBuffer.substring(0, boundary).trim()
+                                monitorBuffer.delete(0, boundary + 1)
                                 if (line.isNotEmpty()) complete += line
-                                newline = monitorBuffer.indexOf("\\n")
+                                if (monitorBuffer.startsWith("\n")) monitorBuffer.deleteCharAt(0)
+                                boundary = monitorBuffer.indexOf("\r")
+                            }
+                            boundary = monitorBuffer.indexOf("\n")
+                            while (boundary >= 0) {
+                                val line = monitorBuffer.substring(0, boundary).trim()
+                                monitorBuffer.delete(0, boundary + 1)
+                                if (line.isNotEmpty()) complete += line
+                                boundary = monitorBuffer.indexOf("\n")
                             }
                             complete
                         }
