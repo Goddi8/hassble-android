@@ -16,6 +16,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
@@ -824,16 +825,43 @@ class NordicElm327Source(
 
             val responseBuffer = rxBuffers.getOrPut(device.id) { StringBuilder() }
             responseBuffer.setLength(0)
+            val monitorActive = AtomicBoolean(false)
+            val monitorBuffer = StringBuilder()
+            val canSensors = device.sensors.filter {
+                it.key in enabledKeys && it.canId != null
+            }
             val rxJob = launch {
                 rxChar.getNotifications().collect { bytes ->
-                    val responses = synchronized(responseBuffer) {
-                        responseBuffer.append(String(bytes.value, Charsets.US_ASCII))
-                        ObdResponseParser.drainCompleteResponses(responseBuffer)
-                    }
-                    // 응답 하나가 대기 중인 명령 하나에 대응한다. 짝이 없는 응답은
-                    // 앞 명령이 타임아웃된 뒤 늦게 온 것이므로 버린다.
-                    for (response in responses) {
-                        pendingDeferreds.remove(device.id)?.complete(response)
+                    val chunk = String(bytes.value, Charsets.US_ASCII)
+                    if (monitorActive.get()) {
+                        val lines = synchronized(monitorBuffer) {
+                            monitorBuffer.append(chunk)
+                            val complete = mutableListOf<String>()
+                            var newline = monitorBuffer.indexOf("\\n")
+                            while (newline >= 0) {
+                                val line = monitorBuffer.substring(0, newline).trim()
+                                monitorBuffer.delete(0, newline + 1)
+                                if (line.isNotEmpty()) complete += line
+                                newline = monitorBuffer.indexOf("\\n")
+                            }
+                            complete
+                        }
+                        for (frame in lines.flatMap { dev.eigger.hassble.decode.CanMonitorParser.parse(it) }) {
+                            collector.emitDownstream(
+                                RawReading(deviceId = device.id, source = "can_passive",
+                                    rawHex = frame.data.joinToString("") { "%02X".format(it) },
+                                    canId = frame.canId),
+                            )
+                        }
+                    } else {
+                        val responses = synchronized(responseBuffer) {
+                            responseBuffer.append(chunk)
+                            ObdResponseParser.drainCompleteResponses(responseBuffer)
+                        }
+                        // 응답 하나가 대기 중인 명령 하나に対応한다. 짝이 없는 응답은 버린다.
+                        for (response in responses) {
+                            pendingDeferreds.remove(device.id)?.complete(response)
+                        }
                     }
                 }
             }
@@ -841,7 +869,7 @@ class NordicElm327Source(
             val targets = device.sensors
                 .filter { it.key in enabledKeys && it.pid != null }
                 .map { PollTarget(it, System.currentTimeMillis()) }
-            if (targets.isEmpty()) {
+            if (targets.isEmpty() && canSensors.isEmpty()) {
                 onLinkStatus(DeviceLinkStatus(device.id, DeviceLinkState.Connected, mac))
                 rxJob.cancel()
                 return@coroutineScope
@@ -864,6 +892,9 @@ class NordicElm327Source(
             var currentPreCommands: List<String> = emptyList()
             var lastTxAtMs = 0L
             var collectIdx = 0
+            val canIntervalMs = parseDurationMs(obd.canMonitorInterval, 30_000L).coerceAtLeast(1_000L)
+            val canDurationMs = parseDurationMs(obd.canMonitorDuration, 5_000L).coerceIn(250L, canIntervalMs)
+            var nextCanMonitorAtMs = System.currentTimeMillis() + canIntervalMs
             // 마지막으로 값을 받은(또는 준비된) 시각. 값이 한 번도 안 나오는 세션을 끊는 데 쓴다.
             // 마지막 정상값 이후 실패한 센서들. 활성 센서가 전부 한 번씩 실패했을 때만 시동 꺼짐으로 본다
             // (지원 안 하는 PID 하나가 짧은 주기로 NO DATA를 내도 주행 중 연결을 끊지 않게).
@@ -934,6 +965,37 @@ class NordicElm327Source(
 
                     if (!elmReady) {
                         delay(POLL_LOOP_MS)
+                        continue
+                    }
+
+                    if (txQueue.isEmpty() && canSensors.isNotEmpty() && now >= nextCanMonitorAtMs) {
+                        // ATMA has no prompt-delimited response. Switch the RX collector to raw
+                        // line mode before starting it, then abort with CR and restore ATH0.
+                        try {
+                            sendCommand(device.id, txChar, "ATH1")
+                            synchronized(monitorBuffer) { monitorBuffer.setLength(0) }
+                            monitorActive.set(true)
+                            txChar.write(DataByteArray("ATMA\\r".toByteArray(Charsets.US_ASCII)), BleWriteType.NO_RESPONSE)
+                            delay(canDurationMs)
+                        } finally {
+                            txChar.write(DataByteArray("\\r".toByteArray(Charsets.US_ASCII)), BleWriteType.NO_RESPONSE)
+                            delay(250L)
+                            monitorActive.set(false)
+                            val tail = synchronized(monitorBuffer) {
+                                val value = monitorBuffer.toString()
+                                monitorBuffer.setLength(0)
+                                value
+                            }
+                            for (frame in dev.eigger.hassble.decode.CanMonitorParser.parse(tail)) {
+                                collector.emitDownstream(
+                                    RawReading(deviceId = device.id, source = "can_passive",
+                                        rawHex = frame.data.joinToString("") { "%02X".format(it) },
+                                        canId = frame.canId),
+                                )
+                            }
+                            sendCommand(device.id, txChar, "ATH0")
+                            nextCanMonitorAtMs = System.currentTimeMillis() + canIntervalMs
+                        }
                         continue
                     }
 
