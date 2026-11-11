@@ -326,6 +326,7 @@ private fun HomeScreen() {
     val enabledSensorsInitialized by repository.enabledSensorsInitialized.collectAsState(initial = false)
     val startOnBoot by repository.startOnBoot.collectAsState(initial = true)
     val vehicleAutoGateway by repository.vehicleAutoGateway.collectAsState(initial = false)
+    val waitForVpn by repository.waitForVpn.collectAsState(initial = false)
     var companionAddresses by remember { mutableStateOf(VehicleCompanionManager.associatedAddresses(context)) }
     val scanMode by repository.scanMode.collectAsState(initial = dev.eigger.hassble.config.BleScanModeOption.LOW_LATENCY)
     val onboardingCompleteFlow = remember(repository) { repository.onboardingComplete.map<Boolean, Boolean?> { it } }
@@ -712,6 +713,8 @@ private fun HomeScreen() {
                             }
                         }
                     },
+                    waitForVpn = waitForVpn,
+                    onWaitForVpnChange = { enabled -> scope.launch { repository.saveWaitForVpn(enabled) } },
                     onAssociateVehicle = { mac ->
                         (context as? MainActivity)?.associateVehicle(mac) { success, result ->
                             if (success) {
@@ -1154,6 +1157,8 @@ private fun GatewayTabContent(
     associatedVehicleMacs: Set<String>,
     vehicleAutoGateway: Boolean,
     onVehicleAutoGatewayChange: (Boolean) -> Unit,
+    waitForVpn: Boolean,
+    onWaitForVpnChange: (Boolean) -> Unit,
     onAssociateVehicle: (String) -> Unit,
     scanMode: dev.eigger.hassble.config.BleScanModeOption,
     onScanModeChange: (dev.eigger.hassble.config.BleScanModeOption) -> Unit,
@@ -1502,6 +1507,31 @@ private fun GatewayTabContent(
                 }
                 if (vehicleAutoGateway && startOnBoot) {
                     Text("Bei aktiver Fahrzeug-Automatik startet das Gateway nicht pauschal beim Android-Start.", fontSize = 11.sp, color = Color.Gray)
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Auf VPN warten", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color.White)
+                        Text(
+                            "Vor der Verbindung zu Home Assistant warten, bis Android ein VPN-Netzwerk meldet. Wirksam beim nächsten Gateway-Start.",
+                            fontSize = 12.sp,
+                            color = Color.Gray,
+                        )
+                    }
+                    Switch(
+                        checked = waitForVpn,
+                        enabled = !isRunning,
+                        onCheckedChange = onWaitForVpnChange,
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = MaterialTheme.colorScheme.primary),
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
