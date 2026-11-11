@@ -259,11 +259,36 @@ ESPHome `ble_elm327`과 동일한 개념. `preset`만 적으면 mode/pid/formula
 | `formula` | `a,b,c,d...` 바이트 식. preset 사용 시 생략 |
 | `update_interval` | 폴링 주기 (기본 60s) |
 | `pre_commands` | 이 PID 전에 보낼 AT 명령 (헤더 전환용) |
+| `can_id` | Passive CAN 전용. CAN arbitration ID(hex, 3–8자리). 설정하면 PID 폴링 대신 해당 프레임을 수신 |
+| `can_offset` | CAN payload 내 시작 바이트 (기본 0) |
+| `can_length` | formula/decode에 전달할 바이트 수 (기본 8, 허용 1–8) |
 | `unit` `device_class` `state_class` `icon` `accuracy_decimals` | HA 메타 |
 | `publish` | 값 필터 (on_change_only, min_interval, deadband, heartbeat) — `defaults.publish` 상속 |
 
 > **참고:** ESPHome 스타일 `filters`(median/delta/throttle)는 v1 스키마에서 지원하지 않습니다.
 > 대신 센서/기기/defaults의 `publish` 규칙을 사용하세요.
+
+
+### Passive CAN monitor
+
+Passive CAN-Sensoren verwenden weiterhin `source: obd` und dieselbe ELM327-BLE-Verbindung wie aktive UDS-Sensoren. Für diese Sensoren wird kein `pid` angegeben. Die App schaltet im konfigurierten Intervall kurz in den ELM327-Monitor-Modus, filtert empfangene Frames anhand von `can_id` und dekodiert den ausgewählten Payload-Ausschnitt. Während des Monitorfensters pausiert das aktive OBD-Polling.
+
+```yaml
+obd:
+  can_monitor_interval: 30s
+  can_monitor_duration: 5s
+sensors:
+  - key: estimated_range
+    can_id: "0C10A040"
+    can_offset: 0
+    can_length: 1
+    formula: "a"
+    unit: "km"
+    device_class: distance
+    state_class: measurement
+```
+
+`can_monitor_duration` darf nicht größer als `can_monitor_interval` sein. Die Werte gelten pro OBD-Geräteprofil. CAN-ID und Byte-Auswertung bleiben fahrzeugspezifische Konfiguration; der Empfangsmechanismus ist generisch.
 
 ## decode 블록 (구조적 파싱)
 
