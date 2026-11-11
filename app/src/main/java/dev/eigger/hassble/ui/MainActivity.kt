@@ -2835,35 +2835,6 @@ private fun CrashReportBanner(onShare: () -> Unit, onDismiss: () -> Unit, modifi
     }
 }
 
-/** 새 릴리스가 있을 때 버전 표기 옆에 붙는 배지. 누르면 릴리스 페이지를 연다. */
-@Composable
-private fun UpdateBadge(version: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val color = MaterialTheme.colorScheme.primary
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(color.copy(alpha = 0.15f))
-            .border(1.dp, color.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 7.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = Icons.Default.KeyboardArrowUp,
-            contentDescription = null,
-            tint = color,
-            modifier = Modifier.size(13.dp),
-        )
-        Spacer(modifier = Modifier.width(2.dp))
-        Text(
-            text = stringResource(R.string.update_available_badge, version),
-            color = color,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-        )
-    }
-}
-
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LogsTabContent(
