@@ -664,8 +664,10 @@ class BleGatewayService : Service() {
                     repository.unbindDevice(deviceId)
                 }
             }
-            repository.updateKnownDeviceIds(newConfigIds)
+            // Apply one-time auto-connect defaults before updating the known-device list.
+            // This lets the repository distinguish existing devices (keep user choice) from new ones.
             repository.initAutoConnectFromConfig(config.devices)
+            repository.updateKnownDeviceIds(newConfigIds)
 
             if (runtime == null) {
                 // WS보다 config 로드가 먼저 끝나는 경우(sticky 재시작 직후의 reload 등)가 있다.
