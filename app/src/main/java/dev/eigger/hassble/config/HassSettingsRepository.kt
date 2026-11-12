@@ -34,6 +34,7 @@ class HassSettingsRepository(private val context: Context) {
         private val KEY_BOUND_DEVICES = stringPreferencesKey("bound_devices")
         private val KEY_START_ON_BOOT = booleanPreferencesKey("start_on_boot")
         private val KEY_VEHICLE_AUTO_GATEWAY = booleanPreferencesKey("vehicle_auto_gateway")
+        private val KEY_WAIT_FOR_VPN = booleanPreferencesKey("wait_for_vpn")
         private val KEY_ENABLED_SENSORS = stringPreferencesKey("enabled_sensors")
         private val KEY_ENABLED_SENSORS_INITIALIZED = booleanPreferencesKey("enabled_sensors_initialized")
         private val KEY_ALL_KNOWN_SENSORS = stringPreferencesKey("all_known_sensors")
@@ -63,6 +64,10 @@ class HassSettingsRepository(private val context: Context) {
 
     val vehicleAutoGateway: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[KEY_VEHICLE_AUTO_GATEWAY] ?: false
+    }
+
+    val waitForVpn: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[KEY_WAIT_FOR_VPN] ?: false
     }
 
     val haToken: Flow<String> = context.dataStore.data.map { prefs ->
@@ -301,6 +306,12 @@ class HassSettingsRepository(private val context: Context) {
         val mirror = context.getSharedPreferences("vehicle_companion", Context.MODE_PRIVATE)
         mirror.edit().putBoolean("auto_gateway_enabled", enabled).apply()
         if (!enabled) mirror.edit().putStringSet("present_addresses", emptySet()).apply()
+    }
+
+    suspend fun saveWaitForVpn(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_WAIT_FOR_VPN] = enabled
+        }
     }
 
     suspend fun saveGitSettings(url: String, token: String?) {
