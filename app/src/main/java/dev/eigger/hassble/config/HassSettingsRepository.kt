@@ -42,6 +42,7 @@ class HassSettingsRepository(private val context: Context) {
         private val KEY_SCAN_MODE = stringPreferencesKey("ble_scan_mode")
         private val KEY_KNOWN_DEVICE_IDS = stringPreferencesKey("known_device_ids")
         private val KEY_AUTO_CONNECT_DISABLED = stringPreferencesKey("auto_connect_disabled")
+        private val KEY_AUTO_CONNECT_INITIALIZED = stringPreferencesKey("auto_connect_initialized")
         private val KEY_ENTITY_FINGERPRINTS = stringPreferencesKey("entity_fingerprints")
         private val KEY_DRAFT_DEVICES = stringPreferencesKey("draft_devices")
         private val KEY_PENDING_HA_REMOVALS = stringPreferencesKey("pending_ha_removals")
@@ -159,23 +160,39 @@ class HassSettingsRepository(private val context: Context) {
 
     suspend fun initAutoConnectFromConfig(devices: List<DeviceConfig>) {
         context.dataStore.edit { prefs ->
+            val currentIds = devices.map { it.id }.toSet()
             val current = runCatching {
                 json.decodeFromString(ListSerializer(String.serializer()), prefs[KEY_AUTO_CONNECT_DISABLED] ?: "[]").toMutableSet()
             }.getOrDefault(mutableSetOf())
-            // config에서 auto_connect: false인 기기는 강제로 disabled에 추가
-            // config에서 auto_connect: true(기본)인 기기는 기존 사용자 설정 유지
+            val knownIds = runCatching {
+                json.decodeFromString(ListSerializer(String.serializer()), prefs[KEY_KNOWN_DEVICE_IDS] ?: "[]").toSet()
+            }.getOrDefault(emptySet())
+            // Migration: devices already known to older versions keep their stored/user-selected state.
+            // On first sight of a new device, apply its config default exactly once.
+            val initialized = runCatching {
+                json.decodeFromString(ListSerializer(String.serializer()), prefs[KEY_AUTO_CONNECT_INITIALIZED] ?: "[]").toMutableSet()
+            }.getOrDefault(knownIds.intersect(currentIds).toMutableSet())
+
             devices.filter { it.source == Source.gatt_notify || it.source == Source.obd }
-                .forEach { d ->
-                    val autoConnect = when (d.source) {
-                        Source.gatt_notify -> d.gatt?.autoConnect != false
-                        Source.obd -> d.obd?.autoConnect != false
-                        else -> true
-                    }
-                    if (!autoConnect) {
-                        current.add(d.id)
+                .forEach { device ->
+                    if (device.id !in initialized) {
+                        val autoConnect = when (device.source) {
+                            Source.gatt_notify -> device.gatt?.autoConnect != false
+                            Source.obd -> device.obd?.autoConnect != false
+                            else -> true
+                        }
+                        if (autoConnect) current.remove(device.id) else current.add(device.id)
                     }
                 }
-            prefs[KEY_AUTO_CONNECT_DISABLED] = json.encodeToString(ListSerializer(String.serializer()), current.sorted())
+
+            // Keep only active device IDs; removed devices must not retain stale overrides.
+            current.retainAll(currentIds)
+            initialized.retainAll(currentIds)
+            initialized.addAll(currentIds)
+            prefs[KEY_AUTO_CONNECT_DISABLED] =
+                json.encodeToString(ListSerializer(String.serializer()), current.sorted())
+            prefs[KEY_AUTO_CONNECT_INITIALIZED] =
+                json.encodeToString(ListSerializer(String.serializer()), initialized.sorted())
         }
     }
 
@@ -484,6 +501,14 @@ class HassSettingsRepository(private val context: Context) {
                     .getOrDefault(mutableListOf())
                 if (set.removeAll { it.startsWith(sensorPrefix) }) {
                     prefs[KEY_ALL_KNOWN_SENSORS] = json.encodeToString(stringList, set.sorted())
+                }
+            }
+
+            prefs[KEY_AUTO_CONNECT_INITIALIZED]?.let { raw ->
+                val set = runCatching { json.decodeFromString(stringList, raw).toMutableList() }
+                    .getOrDefault(mutableListOf())
+                if (set.remove(deviceId)) {
+                    prefs[KEY_AUTO_CONNECT_INITIALIZED] = json.encodeToString(stringList, set.sorted())
                 }
             }
 
