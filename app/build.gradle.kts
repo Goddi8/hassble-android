@@ -10,7 +10,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "dev.eigger.hassble"
+        applicationId = "io.github.goddi8.hassble"
         minSdk = 26
         targetSdk = 35
         versionCode = 88
@@ -49,7 +49,7 @@ android {
         val variant = this
         variant.outputs.all {
             val output = this as com.android.build.gradle.api.ApkVariantOutput
-            output.outputFileName = "HassBle-v${variant.versionName}-${variant.buildType.name}.apk"
+            output.outputFileName = "HassBLE-Goddi8-v${variant.versionName}-${variant.buildType.name}.apk"
         }
     }
     compileOptions {
@@ -98,7 +98,7 @@ dependencies {
 
 // AAB(Android App Bundle) 출력 파일명을 APK와 동일한 형식으로 맞춘다.
 // ApkVariantOutput API는 AAB에 적용되지 않으므로 bundleXxx 태스크 완료 후 rename.
-// 결과: HassBle-v0.3.21-release.aab / HassBle-v0.3.21-debug.aab
+// 결과: HassBLE-Goddi8-v0.3.21-release.aab / HassBLE-Goddi8-v0.3.21-debug.aab
 tasks.whenTaskAdded {
     if (name.startsWith("bundle") && (name.endsWith("Release") || name.endsWith("Debug"))) {
         val buildTypeName = when {
@@ -112,7 +112,7 @@ tasks.whenTaskAdded {
             val versionName = android.defaultConfig.versionName
             outDir.listFiles()
                 ?.firstOrNull { it.extension == "aab" }
-                ?.renameTo(File(outDir, "HassBle-v${versionName}-${buildTypeName}.aab"))
+                ?.renameTo(File(outDir, "HassBLE-Goddi8-v${versionName}-${buildTypeName}.aab"))
         }
     }
 }
