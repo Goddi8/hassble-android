@@ -48,7 +48,7 @@
         android:allowBackup="true"
         android:usesCleartextTraffic="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="HassBle"
+        android:label="HassBLE (Goddi8)"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
