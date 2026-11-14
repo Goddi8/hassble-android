@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "dev.eigger.hassble"
+    namespace = "io.github.goddi8.hassble"
     compileSdk = 35
 
     defaultConfig {
