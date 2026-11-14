@@ -1,6 +1,6 @@
 package dev.eigger.hassble.net
 
-import dev.eigger.hassble.BuildConfig
+import io.github.goddi8.hassble.BuildConfig
 import dev.eigger.hassble.config.ConfigLoader
 import dev.eigger.hassble.config.HassBleDefaults
 import dev.eigger.hassble.config.HassSettingsRepository
