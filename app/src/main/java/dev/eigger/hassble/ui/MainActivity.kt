@@ -1521,7 +1521,7 @@ private fun GatewayTabContent(
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Auf VPN warten", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color.White)
                         Text(
-                            "Vor der Verbindung zu Home Assistant warten, bis Android ein VPN-Netzwerk meldet. Wirksam beim nächsten Gateway-Start.",
+                            "Vor der Verbindung zu Home Assistant warten, bis Android ein VPN-Netzwerk meldet. Gilt auch beim automatischen Start nach einem Android-Neustart. Einstellung nur änderbar, wenn das Gateway gestoppt ist.",
                             fontSize = 12.sp,
                             color = Color.Gray,
                         )
